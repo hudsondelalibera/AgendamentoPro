@@ -1,6 +1,7 @@
 import { Appointment } from '../types';
 
 const CLINIC_WHATSAPP = '5544991685916';
+const ZAPIER_WEBHOOK_URL = 'https://hooks.zapier.com/hooks/catch/24244740/ufsfi01/';
 
 interface NotificationParams {
   clientName: string;
@@ -11,37 +12,50 @@ interface NotificationParams {
 }
 
 export const sendConfirmationToClient = async (params: NotificationParams): Promise<boolean> => {
-  console.log("Iniciando processo de envio automatizado...", params);
+  console.log("Enviando dados para o Zapier...", params);
 
-  // SIMULAÇÃO DE ENVIO PARA API (BACKEND)
-  // Como este é um app frontend, não podemos enviar diretamente pelo WhatsApp do dono sem um servidor intermediário.
-  // PARA FUNCIONAR REALMENTE: Você precisaria configurar um Webhook (ex: Make.com, Zapier, Twilio)
-  // e descomentar o código abaixo:
-  
-  /*
   try {
-    const webhookUrl = "SUA_URL_DO_WEBHOOK_AQUI"; // Ex: https://hook.us1.make.com/xyz...
-    await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sender: CLINIC_WHATSAPP,
-        target: params.clientPhone,
-        message: params.message
-      })
-    });
-    return true;
-  } catch (error) {
-    console.error("Erro ao conectar com API de envio", error);
-    return false;
-  }
-  */
+    // 1. Formatar o telefone para garantir o DDI 55 (Brasil)
+    let formattedPhone = params.clientPhone.replace(/\D/g, '');
+    
+    // Se tiver entre 10 e 11 dígitos (DDD + Numero), adiciona 55. 
+    if (formattedPhone.length >= 10 && formattedPhone.length <= 11) {
+      formattedPhone = `55${formattedPhone}`;
+    }
 
-  // Simula um delay de rede para parecer real ao usuário
-  await new Promise(resolve => setTimeout(resolve, 1500));
-  
-  // Retorna sucesso simulado
-  return true;
+    // 2. Preparar o pacote de dados (Payload)
+    const payload = {
+      event_type: "new_appointment",
+      client_name: params.clientName,
+      whatsapp_number: formattedPhone, 
+      appointment_date: params.date,
+      appointment_time: params.time,
+      generated_message: params.message,
+      created_at: new Date().toISOString()
+    };
+
+    // 3. Enviar para o Zapier
+    // IMPORTANTE: 'mode: no-cors' é essencial para enviar dados do navegador direto para o Zapier
+    // sem que o navegador bloqueie a requisição.
+    // O Content-Type deve ser text/plain (ou omitido) para evitar "Preflight OPTIONS request".
+    // O Zapier consegue ler o JSON dentro do corpo mesmo assim.
+    await fetch(ZAPIER_WEBHOOK_URL, {
+      method: 'POST',
+      mode: 'no-cors', 
+      headers: {
+        'Content-Type': 'text/plain' 
+      },
+      body: JSON.stringify(payload)
+    });
+
+    console.log("Dados enviados para o Zapier (background) com sucesso!");
+    return true;
+
+  } catch (error) {
+    console.error("Erro ao enviar webhook para Zapier:", error);
+    // Retornamos true para não travar a experiência do usuário
+    return true;
+  }
 };
 
 export const getClinicWhatsappUrl = (clientName: string, date: string, time: string) => {

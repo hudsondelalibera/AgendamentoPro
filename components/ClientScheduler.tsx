@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Appointment, TIME_SLOTS, DaySlot } from '../types';
 import { checkAvailability, saveAppointment } from '../services/storageService';
 import { generateConfirmationMessage } from '../services/geminiService';
-import { sendConfirmationToClient, getClinicWhatsappUrl } from '../services/notificationService';
-import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, X, MessageCircle } from 'lucide-react';
+// sendConfirmationToClient removido pois a automação foi desligada
+import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, X } from 'lucide-react';
 
 interface ClientSchedulerProps {
   onBookingComplete: () => void;
@@ -56,8 +56,6 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         setSelectedDate(nextDays[0].dateString);
     }
   }, []);
-
-  // Pre-generate message logic removed to prioritize backend simulation flow
   
   const handleTimeSelect = (time: string) => {
     if (selectedDate && checkAvailability(selectedDate, time)) {
@@ -98,11 +96,9 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     setShowSuccessModal(false);
   };
 
-  const openClinicWhatsapp = () => {
-    if (selectedDate && selectedTime) {
-        const url = getClinicWhatsappUrl(clientName, selectedDate, selectedTime);
-        window.open(url, '_blank');
-    }
+  const handleOk = () => {
+    // Ao invés de recarregar a página (que causa erro no preview), apenas resetamos o formulário
+    resetForm();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -134,15 +130,9 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
       const success = saveAppointment(newAppointment);
 
       if (success) {
-        // 4. AUTOMATION: Send notification via Service (Backend Simulation)
-        // Isso substitui o window.open antigo. O usuário não vê nada acontecer, é automático.
-        await sendConfirmationToClient({
-            clientName,
-            clientPhone: clientWhatsapp,
-            date: selectedDate,
-            time: selectedTime,
-            message
-        });
+        // 4. AUTOMATION REMOVED
+        // O código de envio para o Zapier foi removido conforme solicitado.
+        // O agendamento fica salvo apenas no banco de dados local (AdminDashboard).
         
         // 5. Show Success Modal
         setShowSuccessModal(true);
@@ -327,7 +317,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                       />
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                        O sistema enviará a confirmação para este número automaticamente.
+                        Seu número será usado apenas para o registro.
                     </p>
                   </div>
 
@@ -346,7 +336,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                     {isSubmitting ? (
                       <>
                         <Loader2 className="w-5 h-5 animate-spin" />
-                        Confirmando e Enviando...
+                        Registrando...
                       </>
                     ) : (
                       'Confirmar Agendamento'
@@ -369,34 +359,22 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
 
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Agendamento Realizado!</h2>
             
-            <p className="text-gray-600 leading-relaxed mb-6">
+            <p className="text-gray-600 leading-relaxed mb-8">
               Obrigada por realizar o seu agendamento conosco, será um prazer atende-lo(a) em nossa clínica.
-              <br/>
-              <span className="text-sm text-gray-400 mt-2 block">
-                (A confirmação foi enviada para seu WhatsApp)
-              </span>
             </p>
 
-            <div className="bg-gray-50 border border-gray-100 rounded-lg p-4 mb-6">
-                <p className="text-sm text-gray-600 font-medium mb-2">Ficou com alguma dúvida?</p>
-                <button
-                    onClick={openClinicWhatsapp}
-                    className="w-full bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
-                >
-                    <MessageCircle className="w-5 h-5" />
-                    Falar com a Clínica
-                </button>
-                <p className="text-[10px] text-gray-400 mt-2">
-                   Converse com nosso atendimento no (44) 99168-5916
-                </p>
-            </div>
-
-            <div className="flex flex-col gap-3">
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={handleOk}
+                className="flex-1 bg-gray-100 text-gray-700 font-bold py-3 px-4 rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                OK
+              </button>
               <button
                 onClick={resetForm}
-                className="w-full bg-white hover:bg-gray-50 text-gray-700 font-medium py-3 px-4 rounded-xl border border-gray-200 transition-colors"
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-colors"
               >
-                Concluir / Novo Agendamento
+                Novo Agendamento
               </button>
             </div>
 

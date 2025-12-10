@@ -1,0 +1,5 @@
+{
+  "name": "AgendamentoPro",
+  "description": "Sistema profissional de agendamento de clientes com confirmação via WhatsApp e gestão administrativa.",
+  "requestFramePermissions": []
+}

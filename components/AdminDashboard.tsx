@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Appointment } from '../types';
-import { getAppointments, cancelAppointment, clearAllAppointments } from '../services/storageService';
-import { Trash2, BarChart2, RefreshCw, ShieldAlert, Download, Eraser, Smartphone, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock } from 'lucide-react';
+import { subscribeToAppointments, cancelAppointment, clearAllAppointments } from '../services/storageService';
+import { Trash2, BarChart2, RefreshCw, ShieldAlert, Download, Eraser, Smartphone, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, CloudOff } from 'lucide-react';
+import { db } from '../services/firebaseConfig';
 
 export const AdminDashboard: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -9,6 +10,7 @@ export const AdminDashboard: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   // State for Calendar View
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -71,13 +73,11 @@ export const AdminDashboard: React.FC = () => {
   // --- CORE LOGIC ---
 
   const processOccupancy = (data: Appointment[]) => {
-    // 1. Prepare Calculation Map
     const countsByDate: Record<string, number> = {};
     data.forEach(app => {
         countsByDate[app.date] = (countsByDate[app.date] || 0) + 1;
     });
 
-    // 2. Generate Chart Data (Last 30 days + Next 14 days)
     const rangeStats: {date: string, count: number, rate: number}[] = [];
     const today = getNoonDate();
     
@@ -85,64 +85,52 @@ export const AdminDashboard: React.FC = () => {
         const d = new Date(today);
         d.setDate(today.getDate() + i);
         const dateKey = formatDateKey(d);
-        const dayOfWeek = d.getDay(); // 0=Sun, 6=Sat
+        const dayOfWeek = d.getDay(); 
 
-        // Rule: Skip Sundays in Chart
         if (dayOfWeek === 0) continue; 
 
         const count = countsByDate[dateKey] || 0;
         
-        // Rule: Saturday Capacity (08:00 - 18:00 = 11 slots)
         let dailyCapacity = DEFAULT_SLOTS.length;
         if (dayOfWeek === 6) { 
              dailyCapacity = DEFAULT_SLOTS.filter(t => parseInt(t.split(':')[0], 10) <= 18).length;
         }
 
-        // Avoid division by zero
         dailyCapacity = dailyCapacity || 1;
-
         const rate = Math.round((count / dailyCapacity) * 100);
 
-        rangeStats.push({
-            date: dateKey,
-            count,
-            rate
-        });
+        rangeStats.push({ date: dateKey, count, rate });
     }
-
     setOccupancyData(rangeStats);
   };
 
-  const loadData = () => {
-    const data = getAppointments();
-    // Sort logic
-    const sortedData = [...data].sort((a, b) => {
-        if (a.date !== b.date) return a.date.localeCompare(b.date);
-        return a.time.localeCompare(b.time);
-    });
-    setAppointments(sortedData);
-    processOccupancy(sortedData);
-    setLastUpdated(Date.now());
-  };
-
   useEffect(() => {
-    loadData();
-    const handleStorageChange = () => loadData();
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    // Inscreve no Firestore para atualizações em tempo real (Big Data)
+    const unsubscribe = subscribeToAppointments((data) => {
+      const sortedData = [...data].sort((a, b) => {
+          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          return a.time.localeCompare(b.time);
+      });
+      setAppointments(sortedData);
+      processOccupancy(sortedData);
+      setLastUpdated(Date.now());
+      setIsLoading(false);
+    });
+
+    // Cleanup na desmontagem
+    return () => unsubscribe();
   }, []);
 
-  const handleCancel = (id: string) => {
-    if (window.confirm("Tem certeza que deseja cancelar este agendamento?")) {
-      cancelAppointment(id);
-      loadData();
+  const handleCancel = async (id: string) => {
+    if (window.confirm("Tem certeza que deseja cancelar este agendamento? Esta ação será sincronizada na nuvem.")) {
+      await cancelAppointment(id);
+      // Não precisa chamar loadData(), o listener 'subscribe' atualiza automaticamente
     }
   };
 
-  const handleClearAll = () => {
-    if (window.confirm("PERIGO: Isso apagará TODOS os agendamentos da base de dados. Deseja continuar?")) {
-      clearAllAppointments();
-      loadData();
+  const handleClearAll = async () => {
+    if (window.confirm("PERIGO: Isso apagará TODOS os agendamentos do BANCO DE DADOS NA NUVEM. Deseja continuar?")) {
+      await clearAllAppointments();
     }
   };
 
@@ -167,7 +155,7 @@ export const AdminDashboard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `base_agendamentos_producao_${formatDateKey(new Date())}.csv`);
+    link.setAttribute('download', `base_agendamentos_cloud_${formatDateKey(new Date())}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -210,12 +198,10 @@ export const AdminDashboard: React.FC = () => {
     const startDay = getFirstDayOfMonth(currentMonth);
     const days = [];
 
-    // Empty cells for previous month
     for (let i = 0; i < startDay; i++) {
       days.push(<div key={`empty-${i}`} className="bg-gray-50/50 min-h-[120px] border-r border-b border-gray-100"></div>);
     }
 
-    // Days of current month
     for (let day = 1; day <= totalDays; day++) {
       const dayAppointments = getAppointmentsForDay(day);
       const isCurrentDay = isToday(day);
@@ -229,7 +215,6 @@ export const AdminDashboard: React.FC = () => {
             ${isCurrentDay ? 'bg-indigo-50/30' : 'bg-white hover:bg-gray-50'}
           `}
         >
-          {/* Day Number Header */}
           <div className="flex justify-between items-start mb-2">
             <span className={`
               text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full
@@ -244,7 +229,6 @@ export const AdminDashboard: React.FC = () => {
             )}
           </div>
 
-          {/* Appointments List */}
           <div className="flex flex-col gap-1 overflow-y-auto max-h-[80px] custom-scrollbar">
             {dayAppointments.map(apt => (
               <div 
@@ -268,11 +252,31 @@ export const AdminDashboard: React.FC = () => {
         </div>
       );
     }
-
     return days;
   };
 
   const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+  if (!db) {
+      return (
+          <div className="max-w-4xl mx-auto p-8 text-center bg-white rounded-xl shadow-lg mt-10">
+              <CloudOff className="w-16 h-16 text-red-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-800">Banco de Dados não Configurado</h2>
+              <p className="text-gray-600 mt-2 mb-6">
+                  Para usar a persistência na nuvem (Big Data), você precisa configurar o projeto do Firebase no Vercel.
+              </p>
+              <div className="bg-gray-100 p-4 rounded text-left text-sm font-mono overflow-x-auto">
+                  <p className="font-bold mb-2 text-gray-700">Adicione estas variáveis no Vercel:</p>
+                  VITE_FIREBASE_API_KEY=...<br/>
+                  VITE_FIREBASE_AUTH_DOMAIN=...<br/>
+                  VITE_FIREBASE_PROJECT_ID=...<br/>
+                  VITE_FIREBASE_STORAGE_BUCKET=...<br/>
+                  VITE_FIREBASE_MESSAGING_SENDER_ID=...<br/>
+                  VITE_FIREBASE_APP_ID=...
+              </div>
+          </div>
+      )
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -319,10 +323,13 @@ export const AdminDashboard: React.FC = () => {
             </h2>
             <div className="text-xs text-gray-400 flex items-center gap-2 mt-1">
                 <Clock className="w-3 h-3" />
-                Atualizado: {new Date(lastUpdated).toLocaleTimeString()}
-                <button onClick={loadData} className="text-indigo-600 hover:text-indigo-800" title="Atualizar">
-                    <RefreshCw className="w-3 h-3" />
-                </button>
+                {isLoading ? 'Sincronizando com a nuvem...' : `Atualizado: ${new Date(lastUpdated).toLocaleTimeString()}`}
+                {!isLoading && (
+                    <span className="flex h-2 w-2 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                )}
             </div>
           </div>
 
@@ -332,7 +339,7 @@ export const AdminDashboard: React.FC = () => {
                 className="text-xs text-red-600 bg-red-50 hover:bg-red-100 flex items-center gap-1 px-4 py-2 rounded-lg border border-red-200 transition-colors font-medium"
             >
                 <Eraser className="w-4 h-4" />
-                Limpar Base
+                Limpar Base na Nuvem
             </button>
           </div>
       </div>
@@ -344,7 +351,7 @@ export const AdminDashboard: React.FC = () => {
                 <BarChart2 className="w-6 h-6 text-indigo-600" />
                 <div>
                     <h2 className="text-xl font-bold text-gray-900">Ocupação Diária</h2>
-                    <p className="text-xs text-gray-500">Visualização de Segunda a Sábado</p>
+                    <p className="text-xs text-gray-500">Dados em Tempo Real</p>
                 </div>
             </div>
             <div className="text-sm font-medium bg-gray-100 px-3 py-1 rounded-full text-gray-600">
@@ -355,8 +362,7 @@ export const AdminDashboard: React.FC = () => {
         {occupancyData.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
                 <BarChart2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-gray-500 font-medium">Sistema pronto para receber dados reais.</p>
-                <p className="text-sm text-gray-400 mt-1">Os agendamentos feitos pelos clientes aparecerão aqui.</p>
+                <p className="text-gray-500 font-medium">Aguardando dados...</p>
             </div>
         ) : (
             <div className="overflow-x-auto pb-4 custom-scrollbar">
@@ -371,11 +377,8 @@ export const AdminDashboard: React.FC = () => {
 
                     {occupancyData.map((stat) => {
                          const isToday = stat.date === formatDateKey(new Date());
-                         
                          return (
                             <div key={stat.date} className="flex flex-col items-center flex-1 group relative min-w-[20px] h-full justify-end z-10">
-                                
-                                {/* Hover Tooltip */}
                                 <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs rounded py-2 px-3 transition-opacity duration-200 whitespace-nowrap shadow-xl pointer-events-none z-20">
                                     <div className="font-bold border-b border-gray-700 pb-1 mb-1 text-center text-indigo-200">
                                         {stat.date.split('-').reverse().join('/')}
@@ -383,8 +386,6 @@ export const AdminDashboard: React.FC = () => {
                                     <div className="text-center">{stat.count} agendamentos</div>
                                     <div className="text-center font-bold text-indigo-300">{stat.rate}% ocupado</div>
                                 </div>
-                                
-                                {/* Bar */}
                                 <div 
                                     className={`w-full mx-0.5 rounded-t-sm transition-all relative ${
                                         isToday ? 'bg-indigo-600' : 'bg-indigo-400 hover:bg-indigo-500'
@@ -395,8 +396,6 @@ export const AdminDashboard: React.FC = () => {
                                         opacity: 0.9
                                     }} 
                                 />
-                                
-                                {/* X-Axis Labels (Every 5 days) */}
                                 <div className="absolute top-full mt-2 w-full flex justify-center">
                                    {(parseInt(stat.date.split('-')[2]) % 5 === 0 || isToday) && (
                                        <span className={`text-[10px] whitespace-nowrap ${isToday ? 'font-bold text-indigo-700' : 'text-gray-400'}`}>
@@ -414,7 +413,6 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Calendar View (Gestão à Vista) */}
       <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        {/* Calendar Header */}
         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
                 <div className="bg-indigo-50 p-2 rounded-lg">
@@ -449,7 +447,6 @@ export const AdminDashboard: React.FC = () => {
             </div>
         </div>
 
-        {/* Calendar Grid */}
         <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50">
             {weekDays.map(day => (
                 <div key={day} className="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">
@@ -466,7 +463,7 @@ export const AdminDashboard: React.FC = () => {
       <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
         <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center bg-gray-50 gap-4">
           <div className="flex items-center gap-3">
-             <h3 className="text-md font-bold text-gray-700">Todos os Registros</h3>
+             <h3 className="text-md font-bold text-gray-700">Todos os Registros (Cloud)</h3>
           </div>
           <button 
                 onClick={downloadXLS}
@@ -481,7 +478,7 @@ export const AdminDashboard: React.FC = () => {
         <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
           {appointments.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">
-               <p>Nenhum agendamento realizado ainda.</p>
+               <p>Nenhum agendamento encontrado no banco de dados.</p>
             </div>
           ) : (
             <table className="w-full text-left border-collapse">

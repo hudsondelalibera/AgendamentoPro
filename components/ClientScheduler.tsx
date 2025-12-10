@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Appointment, TIME_SLOTS, DaySlot } from '../types';
-import { checkAvailability, saveAppointment } from '../services/storageService';
+import { checkAvailability, saveAppointment, getAppointments } from '../services/storageService';
 import { generateConfirmationMessage } from '../services/geminiService';
-// sendConfirmationToClient removido pois a automação foi desligada
 import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, X, ChevronRight } from 'lucide-react';
 
 interface ClientSchedulerProps {
@@ -19,46 +18,62 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [generatedMessage, setGeneratedMessage] = useState('');
   
-  // Helper for safe ID generation
-  const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  // State to hold fetched appointments for availability check
+  const [fetchedAppointments, setFetchedAppointments] = useState<Appointment[]>([]);
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(true);
 
-  // Generate next days
   const [days, setDays] = useState<DaySlot[]>([]);
 
+  // Load initial calendar days and fetch existing appointments from Cloud
   useEffect(() => {
-    const nextDays: DaySlot[] = [];
-    const today = new Date();
-    let daysAdded = 0;
-    let dayOffset = 0;
-    
-    while (daysAdded < 6) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + dayOffset);
-      
-      if (date.getDay() !== 0) {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const dateString = `${year}-${month}-${day}`;
+    const init = async () => {
+        // 1. Setup days
+        const nextDays: DaySlot[] = [];
+        const today = new Date();
+        let daysAdded = 0;
+        let dayOffset = 0;
         
-        nextDays.push({
-          date,
-          dateString,
-          dayName: date.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase(),
-          dayNumber: date.getDate()
-        });
-        daysAdded++;
-      }
-      dayOffset++;
-    }
-    setDays(nextDays);
-    if (nextDays.length > 0) {
-        setSelectedDate(nextDays[0].dateString);
-    }
+        while (daysAdded < 6) {
+            const date = new Date(today);
+            date.setDate(today.getDate() + dayOffset);
+            
+            if (date.getDay() !== 0) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const dateString = `${year}-${month}-${day}`;
+                
+                nextDays.push({
+                date,
+                dateString,
+                dayName: date.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase(),
+                dayNumber: date.getDate()
+                });
+                daysAdded++;
+            }
+            dayOffset++;
+        }
+        setDays(nextDays);
+        if (nextDays.length > 0) {
+            setSelectedDate(nextDays[0].dateString);
+        }
+
+        // 2. Fetch occupied slots from Cloud
+        try {
+            const cloudAppointments = await getAppointments();
+            setFetchedAppointments(cloudAppointments);
+        } catch (e) {
+            console.error("Failed to fetch availability", e);
+        } finally {
+            setIsLoadingAvailability(false);
+        }
+    };
+    init();
   }, []);
   
   const handleTimeSelect = (time: string) => {
-    if (selectedDate && checkAvailability(selectedDate, time)) {
+    // Check locally against fetched data first
+    if (selectedDate && isTimeSlotValid(selectedDate, time)) {
       setSelectedTime(time);
     }
   };
@@ -70,7 +85,9 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
   };
 
   const isTimeSlotValid = (dateString: string, timeString: string) => {
-    if (!checkAvailability(dateString, timeString)) return false;
+    // Local check against loaded data
+    const isTaken = fetchedAppointments.some(a => a.date === dateString && a.time === timeString);
+    if (isTaken) return false;
 
     const today = new Date();
     const selectedDateObj = new Date(dateString + 'T00:00:00');
@@ -94,10 +111,11 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     setSelectedTime(null);
     setGeneratedMessage('');
     setShowSuccessModal(false);
+    // Refresh availability
+    getAppointments().then(setFetchedAppointments);
   };
 
   const handleOk = () => {
-    // Ao invés de recarregar a página (que causa erro no preview), apenas resetamos o formulário
     resetForm();
   };
 
@@ -116,8 +134,9 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
       setGeneratedMessage(message);
 
       // 2. Create Appointment Object
+      // Firebase will generate the ID automatically
       const newAppointment: Appointment = {
-        id: generateId(),
+        id: '', // Placeholder, will be ignored by saveAppointment logic for Firestore
         date: selectedDate,
         time: selectedTime,
         clientName,
@@ -126,25 +145,23 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         createdAt: Date.now()
       };
 
-      // 3. Save to Local Storage
-      const success = saveAppointment(newAppointment);
+      // 3. Save to Cloud (Firebase)
+      const success = await saveAppointment(newAppointment);
 
       if (success) {
-        // 4. AUTOMATION REMOVED
-        // O código de envio para o Zapier foi removido conforme solicitado.
-        // O agendamento fica salvo apenas no banco de dados local (AdminDashboard).
-        
-        // 5. Show Success Modal
         setShowSuccessModal(true);
         onBookingComplete();
       } else {
-        alert("Desculpe, este horário acabou de ser ocupado. Por favor, escolha outro.");
+        alert("Desculpe, este horário acabou de ser ocupado por outro cliente. Por favor, escolha outro.");
+        // Refresh data to show blocked slot
+        const freshData = await getAppointments();
+        setFetchedAppointments(freshData);
         setStep(1);
         setSelectedTime(null);
       }
     } catch (error) {
       console.error(error);
-      alert("Ocorreu um erro ao agendar. Tente novamente.");
+      alert("Ocorreu um erro ao agendar. Verifique sua conexão e tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -195,155 +212,165 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
 
         {/* Right Content: Time & Form */}
         <div className="w-full md:w-[65%] p-6 md:p-10 flex flex-col">
-          {step === 1 && (
-            <div className="animate-fade-in flex-1 flex flex-col">
-              <div className="mb-6">
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">Horários Disponíveis</h3>
-                <p className="text-gray-500 text-sm flex items-center gap-2">
-                   <Clock className="w-4 h-4" />
-                   {selectedDate && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', {weekday: 'long', day: 'numeric', month: 'long'})}
-                   {isSelectedDateSaturday && <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium ml-2">Sábado (até 18h)</span>}
-                </p>
+          {isLoadingAvailability ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                  <Loader2 className="w-10 h-10 animate-spin mb-4 text-indigo-500" />
+                  <p>Verificando disponibilidade...</p>
               </div>
+          ) : (
+            <>
+            {step === 1 && (
+                <div className="animate-fade-in flex-1 flex flex-col">
+                <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Horários Disponíveis</h3>
+                    <p className="text-gray-500 text-sm flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    {selectedDate && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', {weekday: 'long', day: 'numeric', month: 'long'})}
+                    {isSelectedDateSaturday && <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium ml-2">Sábado (até 18h)</span>}
+                    </p>
+                </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-8">
-                {TIME_SLOTS.map((time) => {
-                  if (isSelectedDateSaturday) {
-                      const hour = parseInt(time.split(':')[0], 10);
-                      if (hour > 18) return null;
-                  }
-
-                  const isAvailable = selectedDate ? isTimeSlotValid(selectedDate, time) : false;
-                  
-                  return (
-                    <button
-                      key={time}
-                      disabled={!isAvailable}
-                      onClick={() => handleTimeSelect(time)}
-                      className={`
-                        py-3 px-2 rounded-lg text-sm font-semibold transition-all border relative overflow-hidden
-                        ${!isAvailable 
-                          ? 'bg-gray-50 text-gray-300 border-transparent cursor-not-allowed opacity-60' 
-                          : selectedTime === time
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105'
-                            : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-400 hover:text-indigo-600 hover:shadow-sm'
-                        }
-                      `}
-                    >
-                      {time}
-                    </button>
-                  );
-                })}
-              </div>
-              
-              <div className="mt-auto pt-6 border-t border-gray-100 flex justify-end">
-                <button
-                  disabled={!selectedTime}
-                  onClick={handleNextStep}
-                  className={`
-                    px-8 py-3 rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg
-                    ${selectedTime
-                      ? 'bg-gray-900 text-white hover:bg-black transform hover:-translate-y-1'
-                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-8">
+                    {TIME_SLOTS.map((time) => {
+                    if (isSelectedDateSaturday) {
+                        const hour = parseInt(time.split(':')[0], 10);
+                        if (hour > 18) return null;
                     }
-                  `}
-                >
-                  Continuar
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
 
-          {step === 2 && (
-            <div className="animate-fade-in flex-1">
-              <button 
-                  onClick={() => setStep(1)}
-                  className="text-sm text-gray-500 hover:text-indigo-600 mb-8 flex items-center gap-1 transition-colors group"
-              >
-                <ChevronRight className="w-4 h-4 rotate-180 group-hover:-translate-x-1 transition-transform" />
-                Alterar horário
-              </button>
-
-              <h3 className="text-2xl font-bold text-gray-900 mb-8">Confirmar Agendamento</h3>
-              
-              <div className="bg-indigo-50/50 p-6 rounded-2xl mb-8 border border-indigo-100 flex gap-6 items-center">
-                <div className="bg-white p-3 rounded-xl shadow-sm">
-                    <Calendar className="w-6 h-6 text-indigo-600" />
+                    const isAvailable = selectedDate ? isTimeSlotValid(selectedDate, time) : false;
+                    
+                    return (
+                        <button
+                        key={time}
+                        disabled={!isAvailable}
+                        onClick={() => handleTimeSelect(time)}
+                        className={`
+                            py-3 px-2 rounded-lg text-sm font-semibold transition-all border relative overflow-hidden
+                            ${!isAvailable 
+                            ? 'bg-gray-50 text-gray-300 border-transparent cursor-not-allowed opacity-60 decoration-slate-300' 
+                            : selectedTime === time
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105'
+                                : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-400 hover:text-indigo-600 hover:shadow-sm'
+                            }
+                        `}
+                        >
+                        {time}
+                        {!isAvailable && <span className="absolute inset-0 flex items-center justify-center bg-gray-50/50"></span>}
+                        </button>
+                    );
+                    })}
                 </div>
-                <div>
-                    <div className="text-sm text-indigo-900/60 font-medium uppercase tracking-wide">Data Selecionada</div>
-                    <div className="text-lg font-bold text-indigo-900">
-                        {selectedDate && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-                        <span className="mx-2 text-indigo-300">|</span>
-                        {selectedTime}
-                    </div>
-                </div>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-6">
-                  <div>
-                    <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">Nome Completo</label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <User className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                      </div>
-                      <input
-                        type="text"
-                        id="name"
-                        required
-                        value={clientName}
-                        onChange={(e) => setClientName(e.target.value)}
-                        className="block w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
-                        placeholder="Digite seu nome"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="whatsapp" className="block text-sm font-semibold text-gray-700 mb-2">WhatsApp</label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <Smartphone className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                      </div>
-                      <input
-                        type="text"
-                        id="whatsapp"
-                        required
-                        value={clientWhatsapp}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '');
-                          setClientWhatsapp(val);
-                        }}
-                        className="block w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
-                        placeholder="(11) 99999-9999"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || !clientName || !clientWhatsapp}
+                
+                <div className="mt-auto pt-6 border-t border-gray-100 flex justify-end">
+                    <button
+                    disabled={!selectedTime}
+                    onClick={handleNextStep}
                     className={`
-                      w-full py-4 rounded-xl font-bold text-white shadow-xl transition-all mt-8
-                      flex items-center justify-center gap-3 text-lg
-                      ${isSubmitting 
-                        ? 'bg-indigo-400 cursor-wait' 
-                        : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-2xl hover:-translate-y-1'
-                      }
+                        px-8 py-3 rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg
+                        ${selectedTime
+                        ? 'bg-gray-900 text-white hover:bg-black transform hover:-translate-y-1'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        }
                     `}
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-6 h-6 animate-spin" />
-                        Confirmando...
-                      </>
-                    ) : (
-                      'Finalizar Agendamento'
-                    )}
-                  </button>
-              </form>
-            </div>
+                    >
+                    Continuar
+                    <ChevronRight className="w-4 h-4" />
+                    </button>
+                </div>
+                </div>
+            )}
+
+            {step === 2 && (
+                <div className="animate-fade-in flex-1">
+                <button 
+                    onClick={() => setStep(1)}
+                    className="text-sm text-gray-500 hover:text-indigo-600 mb-8 flex items-center gap-1 transition-colors group"
+                >
+                    <ChevronRight className="w-4 h-4 rotate-180 group-hover:-translate-x-1 transition-transform" />
+                    Alterar horário
+                </button>
+
+                <h3 className="text-2xl font-bold text-gray-900 mb-8">Confirmar Agendamento</h3>
+                
+                <div className="bg-indigo-50/50 p-6 rounded-2xl mb-8 border border-indigo-100 flex gap-6 items-center">
+                    <div className="bg-white p-3 rounded-xl shadow-sm">
+                        <Calendar className="w-6 h-6 text-indigo-600" />
+                    </div>
+                    <div>
+                        <div className="text-sm text-indigo-900/60 font-medium uppercase tracking-wide">Data Selecionada</div>
+                        <div className="text-lg font-bold text-indigo-900">
+                            {selectedDate && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                            <span className="mx-2 text-indigo-300">|</span>
+                            {selectedTime}
+                        </div>
+                    </div>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    <div>
+                        <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">Nome Completo</label>
+                        <div className="relative group">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                            <User className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                        </div>
+                        <input
+                            type="text"
+                            id="name"
+                            required
+                            value={clientName}
+                            onChange={(e) => setClientName(e.target.value)}
+                            className="block w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
+                            placeholder="Digite seu nome"
+                        />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label htmlFor="whatsapp" className="block text-sm font-semibold text-gray-700 mb-2">WhatsApp</label>
+                        <div className="relative group">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                            <Smartphone className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                        </div>
+                        <input
+                            type="text"
+                            id="whatsapp"
+                            required
+                            value={clientWhatsapp}
+                            onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setClientWhatsapp(val);
+                            }}
+                            className="block w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
+                            placeholder="(11) 99999-9999"
+                        />
+                        </div>
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={isSubmitting || !clientName || !clientWhatsapp}
+                        className={`
+                        w-full py-4 rounded-xl font-bold text-white shadow-xl transition-all mt-8
+                        flex items-center justify-center gap-3 text-lg
+                        ${isSubmitting 
+                            ? 'bg-indigo-400 cursor-wait' 
+                            : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-2xl hover:-translate-y-1'
+                        }
+                        `}
+                    >
+                        {isSubmitting ? (
+                        <>
+                            <Loader2 className="w-6 h-6 animate-spin" />
+                            Confirmando...
+                        </>
+                        ) : (
+                        'Finalizar Agendamento'
+                        )}
+                    </button>
+                </form>
+                </div>
+            )}
+            </>
           )}
         </div>
       </div>
@@ -360,7 +387,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
             <h2 className="text-2xl font-bold text-gray-900 mb-3">Tudo Certo!</h2>
             
             <p className="text-gray-500 leading-relaxed mb-8">
-              Seu horário foi reservado com sucesso.
+              Seu horário foi reservado com sucesso e salvo em nossa nuvem segura.
               <br/>
               <span className="text-sm font-medium text-indigo-600 mt-2 block">Te esperamos lá!</span>
             </p>

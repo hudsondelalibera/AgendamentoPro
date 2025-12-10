@@ -3,7 +3,7 @@ import { Appointment, TIME_SLOTS, DaySlot } from '../types';
 import { checkAvailability, saveAppointment } from '../services/storageService';
 import { generateConfirmationMessage } from '../services/geminiService';
 // sendConfirmationToClient removido pois a automação foi desligada
-import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, X } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, X, ChevronRight } from 'lucide-react';
 
 interface ClientSchedulerProps {
   onBookingComplete: () => void;
@@ -155,14 +155,14 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
 
   return (
     <>
-      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden min-h-[500px] flex flex-col md:flex-row relative">
+      <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden min-h-[500px] flex flex-col md:flex-row relative">
         {/* Left Sidebar: Date Selection */}
-        <div className="w-full md:w-1/3 bg-gray-50 p-6 border-r border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-indigo-600" /> Escolha a Data
+        <div className="w-full md:w-[35%] bg-gray-50 p-6 md:p-8 border-r border-gray-100">
+          <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-indigo-600" /> 
+            Escolha o Dia
           </h3>
-          <p className="text-xs text-gray-500 mb-4">Mostrando disponibilidade para os próximos dias (exceto domingos).</p>
-          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+          <div className="space-y-3">
             {days.map((day) => (
               <button
                 key={day.dateString}
@@ -170,35 +170,43 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                   setSelectedDate(day.dateString);
                   setSelectedTime(null);
                 }}
-                className={`w-full flex items-center p-3 rounded-lg border transition-all ${
+                className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all duration-200 group ${
                   selectedDate === day.dateString
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
-                    : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-300'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg scale-[1.02]'
+                    : 'bg-white text-gray-700 border-gray-100 hover:border-indigo-200 hover:shadow-md'
                 }`}
               >
-                <div className="flex flex-col items-center justify-center w-10 h-10 bg-white/20 rounded mr-3 backdrop-blur-sm">
-                  <span className="text-xs font-bold">{day.dayName}</span>
-                  <span className="text-lg font-bold">{day.dayNumber}</span>
+                <div className="flex items-center gap-4">
+                    <div className={`flex flex-col items-center justify-center w-12 h-12 rounded-lg backdrop-blur-sm transition-colors ${
+                        selectedDate === day.dateString ? 'bg-white/20' : 'bg-gray-100 group-hover:bg-indigo-50'
+                    }`}>
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{day.dayName}</span>
+                    <span className="text-xl font-bold leading-none">{day.dayNumber}</span>
+                    </div>
+                    <span className="font-medium text-sm">
+                    {day.date.toLocaleDateString('pt-BR', { month: 'long' })}
+                    </span>
                 </div>
-                <span className="font-medium text-sm">
-                  {day.date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-                </span>
+                {selectedDate === day.dateString && <ChevronRight className="w-4 h-4 text-white/80" />}
               </button>
             ))}
           </div>
         </div>
 
         {/* Right Content: Time & Form */}
-        <div className="w-full md:w-2/3 p-6 md:p-8">
+        <div className="w-full md:w-[65%] p-6 md:p-10 flex flex-col">
           {step === 1 && (
-            <div className="animate-fade-in">
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Horários Disponíveis</h3>
-              <p className="text-gray-500 mb-6 text-sm">
-                Para o dia {selectedDate && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR')}
-                {isSelectedDateSaturday && <span className="text-amber-600 font-medium ml-2">(Horário de Sábado: 08:00 - 18:00)</span>}
-              </p>
+            <div className="animate-fade-in flex-1 flex flex-col">
+              <div className="mb-6">
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Horários Disponíveis</h3>
+                <p className="text-gray-500 text-sm flex items-center gap-2">
+                   <Clock className="w-4 h-4" />
+                   {selectedDate && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', {weekday: 'long', day: 'numeric', month: 'long'})}
+                   {isSelectedDateSaturday && <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium ml-2">Sábado (até 18h)</span>}
+                </p>
+              </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-8">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-8">
                 {TIME_SLOTS.map((time) => {
                   if (isSelectedDateSaturday) {
                       const hour = parseInt(time.split(':')[0], 10);
@@ -213,12 +221,12 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                       disabled={!isAvailable}
                       onClick={() => handleTimeSelect(time)}
                       className={`
-                        py-3 px-2 rounded-lg text-sm font-semibold transition-all border
+                        py-3 px-2 rounded-lg text-sm font-semibold transition-all border relative overflow-hidden
                         ${!isAvailable 
-                          ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed' 
+                          ? 'bg-gray-50 text-gray-300 border-transparent cursor-not-allowed opacity-60' 
                           : selectedTime === time
-                            ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-200'
-                            : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-500 hover:text-indigo-600'
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105'
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-400 hover:text-indigo-600 hover:shadow-sm'
                         }
                       `}
                     >
@@ -228,62 +236,57 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                 })}
               </div>
               
-              {selectedDate && (
-                <div className="text-xs text-gray-400 mb-4 text-center">
-                    * Horários passados são removidos automaticamente.
-                </div>
-              )}
-
-              <div className="flex justify-end pt-4 border-t border-gray-100">
+              <div className="mt-auto pt-6 border-t border-gray-100 flex justify-end">
                 <button
                   disabled={!selectedTime}
                   onClick={handleNextStep}
                   className={`
-                    px-6 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2
+                    px-8 py-3 rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg
                     ${selectedTime
-                      ? 'bg-gray-900 text-white hover:bg-black shadow-lg'
+                      ? 'bg-gray-900 text-white hover:bg-black transform hover:-translate-y-1'
                       : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     }
                   `}
                 >
                   Continuar
+                  <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
           )}
 
           {step === 2 && (
-            <div className="animate-fade-in">
+            <div className="animate-fade-in flex-1">
               <button 
                   onClick={() => setStep(1)}
-                  className="text-sm text-gray-500 hover:text-gray-900 mb-6 flex items-center gap-1"
+                  className="text-sm text-gray-500 hover:text-indigo-600 mb-8 flex items-center gap-1 transition-colors group"
               >
-                ← Voltar para horários
+                <ChevronRight className="w-4 h-4 rotate-180 group-hover:-translate-x-1 transition-transform" />
+                Alterar horário
               </button>
 
-              <h3 className="text-xl font-bold text-gray-900 mb-6">Finalizar Agendamento</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-8">Confirmar Agendamento</h3>
               
-              <div className="bg-indigo-50 p-4 rounded-lg mb-6 border border-indigo-100">
-                <div className="flex items-center gap-4 text-sm text-indigo-900">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4" />
-                      <span className="font-semibold">
-                        {selectedDate && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR')}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      <span className="font-semibold">{selectedTime}</span>
+              <div className="bg-indigo-50/50 p-6 rounded-2xl mb-8 border border-indigo-100 flex gap-6 items-center">
+                <div className="bg-white p-3 rounded-xl shadow-sm">
+                    <Calendar className="w-6 h-6 text-indigo-600" />
+                </div>
+                <div>
+                    <div className="text-sm text-indigo-900/60 font-medium uppercase tracking-wide">Data Selecionada</div>
+                    <div className="text-lg font-bold text-indigo-900">
+                        {selectedDate && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                        <span className="mx-2 text-indigo-300">|</span>
+                        {selectedTime}
                     </div>
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-6">
                   <div>
-                    <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <User className="h-5 w-5 text-gray-400" />
+                    <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">Nome Completo</label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <User className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
                       </div>
                       <input
                         type="text"
@@ -291,17 +294,17 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                         required
                         value={clientName}
                         onChange={(e) => setClientName(e.target.value)}
-                        className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                        placeholder="Seu nome"
+                        className="block w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
+                        placeholder="Digite seu nome"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label htmlFor="whatsapp" className="block text-sm font-medium text-gray-700 mb-1">WhatsApp (com DDD)</label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Smartphone className="h-5 w-5 text-gray-400" />
+                    <label htmlFor="whatsapp" className="block text-sm font-semibold text-gray-700 mb-2">WhatsApp</label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <Smartphone className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
                       </div>
                       <input
                         type="text"
@@ -312,34 +315,31 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                           const val = e.target.value.replace(/\D/g, '');
                           setClientWhatsapp(val);
                         }}
-                        className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                        placeholder="11999999999"
+                        className="block w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none"
+                        placeholder="(11) 99999-9999"
                       />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                        Seu número será usado apenas para o registro.
-                    </p>
                   </div>
 
                   <button
                     type="submit"
                     disabled={isSubmitting || !clientName || !clientWhatsapp}
                     className={`
-                      w-full py-3 rounded-lg font-bold text-white shadow-md transition-all mt-6
-                      flex items-center justify-center gap-2
+                      w-full py-4 rounded-xl font-bold text-white shadow-xl transition-all mt-8
+                      flex items-center justify-center gap-3 text-lg
                       ${isSubmitting 
                         ? 'bg-indigo-400 cursor-wait' 
-                        : 'bg-indigo-600 hover:bg-indigo-700'
+                        : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-2xl hover:-translate-y-1'
                       }
                     `}
                   >
                     {isSubmitting ? (
                       <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        Registrando...
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        Confirmando...
                       </>
                     ) : (
-                      'Confirmar Agendamento'
+                      'Finalizar Agendamento'
                     )}
                   </button>
               </form>
@@ -350,31 +350,27 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
 
       {/* Success Modal */}
       {showSuccessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center relative transform transition-all scale-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center relative transform transition-all scale-100 border border-gray-100">
             
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <CheckCircle className="w-10 h-10 text-green-600" />
+            <div className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce-slow">
+              <CheckCircle className="w-12 h-12 text-green-500" />
             </div>
 
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Agendamento Realizado!</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">Tudo Certo!</h2>
             
-            <p className="text-gray-600 leading-relaxed mb-8">
-              Obrigada por realizar o seu agendamento conosco, será um prazer atende-lo(a) em nossa clínica.
+            <p className="text-gray-500 leading-relaxed mb-8">
+              Seu horário foi reservado com sucesso.
+              <br/>
+              <span className="text-sm font-medium text-indigo-600 mt-2 block">Te esperamos lá!</span>
             </p>
 
-            <div className="flex gap-3 w-full">
+            <div className="flex flex-col gap-3 w-full">
               <button
                 onClick={handleOk}
-                className="flex-1 bg-gray-100 text-gray-700 font-bold py-3 px-4 rounded-xl hover:bg-gray-200 transition-colors"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all active:scale-95"
               >
-                OK
-              </button>
-              <button
-                onClick={resetForm}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-colors"
-              >
-                Novo Agendamento
+                Concluir
               </button>
             </div>
 

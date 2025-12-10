@@ -4,9 +4,10 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Define 'process.env' como um objeto vazio para evitar que bibliotecas que usam 'process' quebrem o app
+    // Garante que o process.env não quebre o app no navegador
     'process.env': {},
-    // Injeta especificamente a API Key das variáveis de ambiente do Vercel
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY)
+    // Injeta a API Key especificamente. 
+    // Nota: O Vercel disponibiliza variáveis de ambiente no processo de build.
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
   }
 });

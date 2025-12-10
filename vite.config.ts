@@ -5,9 +5,9 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Garante que a chave seja uma string, mesmo que vazia, para não quebrar o JSON.stringify
+    // Garante que a chave seja uma string segura
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
-    // Define um fallback seguro para process.env para evitar crash em bibliotecas legadas
+    // Evita crash por falta de process.env em libs legadas
     'process.env': {} 
   }
 });

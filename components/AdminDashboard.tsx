@@ -6,7 +6,8 @@ import { isFirebaseInitialized } from '../services/firebaseConfig';
 
 export const AdminDashboard: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [occupancyData, setOccupancyData] = useState<{date: string, count: number, rate: number}[]>([]);
+  // Tipagem atualizada para incluir displayDate
+  const [occupancyData, setOccupancyData] = useState<{date: string, displayDate: string, count: number, rate: number, isToday: boolean}[]>([]);
   const [copiedLink, setCopiedLink] = useState(false);
   const [selectedDateFilter, setSelectedDateFilter] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -54,20 +55,32 @@ export const AdminDashboard: React.FC = () => {
         countsByDate[app.date] = (countsByDate[app.date] || 0) + 1;
     });
 
-    const rangeStats: {date: string, count: number, rate: number}[] = [];
+    const rangeStats: {date: string, displayDate: string, count: number, rate: number, isToday: boolean}[] = [];
     const today = getNoonDate();
+    const todayKey = formatDateKey(today);
     
+    // Capacidade estimada: Das 07:00 as 20:00 (13 horas) + slot das 20h = ~14 agendamentos de 1h
+    const MAX_DAILY_CAPACITY = 14; 
+
     for(let i = -15; i <= 15; i++) {
         const d = new Date(today);
         d.setDate(today.getDate() + i);
         const dateKey = formatDateKey(d);
         const dayOfWeek = d.getDay(); 
 
-        if (dayOfWeek === 0) continue; 
+        if (dayOfWeek === 0) continue; // Pula domingos
 
         const count = countsByDate[dateKey] || 0;
-        const rate = Math.round((count / 13) * 100); // Assuming ~13 slots/day
-        rangeStats.push({ date: dateKey, count, rate });
+        // Limita a taxa visual a 100% mesmo se houver overbooking manual
+        const rate = Math.min(Math.round((count / MAX_DAILY_CAPACITY) * 100), 100); 
+        
+        rangeStats.push({ 
+            date: dateKey, 
+            displayDate: d.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'}),
+            count, 
+            rate,
+            isToday: dateKey === todayKey
+        });
     }
     setOccupancyData(rangeStats);
   };
@@ -250,12 +263,28 @@ export const AdminDashboard: React.FC = () => {
              <div className="flex items-center justify-between mb-4">
                 <h3 className="font-bold text-gray-700 flex items-center gap-2"><BarChart2 className="w-5 h-5 text-indigo-600"/> Visão Geral (30 dias)</h3>
              </div>
-             <div className="h-32 flex items-end justify-between gap-1 px-2 border-b border-gray-100 pb-2">
+             <div className="h-32 flex items-end justify-between gap-1 px-2 border-b border-gray-100 pb-2 relative">
+                 {/* Linha guia de 50% */}
+                 <div className="absolute top-1/2 left-0 w-full border-t border-dashed border-gray-200 -z-10"></div>
+                 
                  {occupancyData.map((d, i) => (
-                     <div key={i} className="flex-1 bg-indigo-100 hover:bg-indigo-500 transition-colors rounded-t-sm relative group" style={{height: `${Math.max(d.rate, 5)}%`}}>
-                         <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-gray-900 text-white text-xs p-1 rounded whitespace-nowrap z-10">{d.count} agend.</div>
+                     <div 
+                        key={i} 
+                        className={`flex-1 transition-all rounded-t-sm relative group cursor-pointer ${d.isToday ? 'bg-indigo-600' : 'bg-indigo-200 hover:bg-indigo-400'}`} 
+                        style={{height: `${Math.max(d.rate, 8)}%`}}
+                        title={`${d.displayDate}: ${d.count} agendamentos`}
+                     >
+                         <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-900 text-white text-[10px] p-1.5 rounded shadow-lg whitespace-nowrap z-20 pointer-events-none">
+                            <span className="font-bold block text-center">{d.displayDate}</span>
+                            {d.count} agend. ({d.rate}%)
+                         </div>
                      </div>
                  ))}
+             </div>
+             <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
+                 <span>15 dias atrás</span>
+                 <span>Hoje</span>
+                 <span>Daqui 15 dias</span>
              </div>
           </div>
           <div className="w-full md:w-80 bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center gap-3">

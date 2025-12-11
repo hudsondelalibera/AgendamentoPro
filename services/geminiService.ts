@@ -14,12 +14,19 @@ export const generateConfirmationMessage = async (
   try {
     const model = 'gemini-2.5-flash';
     const prompt = `
-      Crie uma mensagem curta, profissional e amigável de confirmação de agendamento para WhatsApp.
-      Cliente: ${clientName}
-      Data: ${date}
-      Horário: ${time}
+      Crie uma mensagem curta, elegante e profissional de confirmação de agendamento para WhatsApp.
       
-      A mensagem deve ser em português, confirmar que o horário está reservado e pedir para chegar com 5 minutos de antecedência. Não use hashtags. Use emojis moderadamente.
+      Dados do Agendamento:
+      - Cliente: ${clientName}
+      - Data: ${date}
+      - Horário: ${time}
+      
+      Instruções:
+      1. Use um tom acolhedor, mas profissional.
+      2. Peça gentilmente para chegar com 5 minutos de antecedência.
+      3. Se for Sexta ou Sábado, deseje um bom fim de semana no final.
+      4. Use no máximo 2 emojis.
+      5. Texto em Português do Brasil.
     `;
 
     const response = await aiClient.models.generateContent({

@@ -1,21 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Appointment } from '../types';
 import { subscribeToAppointments, cancelAppointment, clearAllAppointments } from '../services/storageService';
-import { Trash2, BarChart2, RefreshCw, ShieldAlert, Download, Eraser, Smartphone, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Cloud, CloudOff } from 'lucide-react';
+import { Trash2, BarChart2, Download, Eraser, Smartphone, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CloudOff, Filter, X } from 'lucide-react';
 import { isFirebaseInitialized } from '../services/firebaseConfig';
 
 export const AdminDashboard: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [occupancyData, setOccupancyData] = useState<{date: string, count: number, rate: number}[]>([]);
-  const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [selectedDateFilter, setSelectedDateFilter] = useState<string | null>(null);
   
-  // State for Calendar View
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  // --- UTILS ---
   const getNoonDate = (date: Date = new Date()) => {
     const d = new Date(date);
     d.setHours(12, 0, 0, 0);
@@ -59,17 +56,9 @@ export const AdminDashboard: React.FC = () => {
 
   const handleShareInvite = () => {
     const url = window.location.href;
-    const message = `Olá! 👋\n\nAgende seu horário conosco de forma prática e rápida através do nosso link:\n${url}\n\nEsperamos por você!`;
+    const message = `Olá! 👋\n\nAgende seu horário conosco de forma prática e rápida pelo nosso App:\n${url}\n\nEscolha o melhor horário para você. Esperamos sua visita!`;
     copyToClipboard(message, 'invite');
   };
-
-  const DEFAULT_SLOTS = [
-    "08:00", "09:00", "10:00", "11:00", "12:00", 
-    "13:00", "14:00", "15:00", "16:00", "17:00", 
-    "18:00", "19:00", "20:00"
-  ];
-
-  // --- CORE LOGIC ---
 
   const processOccupancy = (data: Appointment[]) => {
     const countsByDate: Record<string, number> = {};
@@ -80,7 +69,7 @@ export const AdminDashboard: React.FC = () => {
     const rangeStats: {date: string, count: number, rate: number}[] = [];
     const today = getNoonDate();
     
-    for(let i = -30; i <= 14; i++) {
+    for(let i = -15; i <= 15; i++) {
         const d = new Date(today);
         d.setDate(today.getDate() + i);
         const dateKey = formatDateKey(d);
@@ -89,15 +78,7 @@ export const AdminDashboard: React.FC = () => {
         if (dayOfWeek === 0) continue; 
 
         const count = countsByDate[dateKey] || 0;
-        
-        let dailyCapacity = DEFAULT_SLOTS.length;
-        if (dayOfWeek === 6) { 
-             dailyCapacity = DEFAULT_SLOTS.filter(t => parseInt(t.split(':')[0], 10) <= 18).length;
-        }
-
-        dailyCapacity = dailyCapacity || 1;
-        const rate = Math.round((count / dailyCapacity) * 100);
-
+        const rate = Math.round((count / 13) * 100); // Assuming ~13 slots/day
         rangeStats.push({ date: dateKey, count, rate });
     }
     setOccupancyData(rangeStats);
@@ -111,16 +92,17 @@ export const AdminDashboard: React.FC = () => {
       });
       setAppointments(sortedData);
       processOccupancy(sortedData);
-      setLastUpdated(Date.now());
-      setIsLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  const handleCancel = async (id: string) => {
-    if (window.confirm("Tem certeza que deseja cancelar este agendamento?")) {
-      await cancelAppointment(id);
+  const handleCancel = async (apt: Appointment) => {
+    const dateFormatted = apt.date.split('-').reverse().join('/');
+    const confirmMessage = `CONFIRMAÇÃO DE CANCELAMENTO:\n\nCliente: ${apt.clientName}\nData: ${dateFormatted}\nHorário: ${apt.time}\n\nAo confirmar, este horário ficará livre imediatamente para novos agendamentos.`;
+    
+    if (window.confirm(confirmMessage)) {
+      await cancelAppointment(apt.id);
     }
   };
 
@@ -131,7 +113,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const downloadXLS = () => {
-    const headers = ['ID', 'Data', 'Hora', 'Nome do Cliente', 'WhatsApp', 'Data Criacao'];
+    const headers = ['ID', 'Data', 'Hora', 'Cliente', 'WhatsApp'];
     const csvRows = [headers.join(',')];
 
     appointments.forEach(apt => {
@@ -140,8 +122,7 @@ export const AdminDashboard: React.FC = () => {
             apt.date,
             apt.time,
             `"${apt.clientName}"`,
-            `"${apt.clientWhatsapp}"`,
-            new Date(apt.createdAt).toLocaleDateString('pt-BR')
+            `"${apt.clientWhatsapp}"`
         ];
         csvRows.push(row.join(','));
     });
@@ -151,36 +132,24 @@ export const AdminDashboard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `agendamentos_${formatDateKey(new Date())}.csv`);
+    link.setAttribute('download', `agendamentos_pro_${formatDateKey(new Date())}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // --- CALENDAR LOGIC ---
-  const getDaysInMonth = (date: Date) => {
-    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-  };
-
-  const getFirstDayOfMonth = (date: Date) => {
-    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
-  };
-
+  // Calendar Helpers
+  const getDaysInMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  const getFirstDayOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   const changeMonth = (offset: number) => {
     const newDate = new Date(currentMonth);
     newDate.setMonth(newDate.getMonth() + offset);
     setCurrentMonth(newDate);
   };
-
   const isToday = (day: number) => {
     const today = new Date();
-    return (
-      day === today.getDate() &&
-      currentMonth.getMonth() === today.getMonth() &&
-      currentMonth.getFullYear() === today.getFullYear()
-    );
+    return day === today.getDate() && currentMonth.getMonth() === today.getMonth() && currentMonth.getFullYear() === today.getFullYear();
   };
-
   const getAppointmentsForDay = (day: number) => {
     const year = currentMonth.getFullYear();
     const month = String(currentMonth.getMonth() + 1).padStart(2, '0');
@@ -194,56 +163,36 @@ export const AdminDashboard: React.FC = () => {
     const startDay = getFirstDayOfMonth(currentMonth);
     const days = [];
 
-    for (let i = 0; i < startDay; i++) {
-      days.push(<div key={`empty-${i}`} className="bg-gray-50/50 min-h-[120px] border-r border-b border-gray-100"></div>);
-    }
+    for (let i = 0; i < startDay; i++) days.push(<div key={`empty-${i}`} className="bg-gray-50/50 min-h-[100px] border-r border-b border-gray-100"></div>);
 
     for (let day = 1; day <= totalDays; day++) {
       const dayAppointments = getAppointmentsForDay(day);
       const isCurrentDay = isToday(day);
-      const hasAppointments = dayAppointments.length > 0;
+      
+      const year = currentMonth.getFullYear();
+      const month = String(currentMonth.getMonth() + 1).padStart(2, '0');
+      const dayStr = String(day).padStart(2, '0');
+      const dateKey = `${year}-${month}-${dayStr}`;
+      
+      const isSelected = selectedDateFilter === dateKey;
 
       days.push(
         <div 
-          key={day} 
-          className={`
-            min-h-[120px] p-2 border-r border-b border-gray-100 relative group transition-colors
-            ${isCurrentDay ? 'bg-indigo-50/30' : 'bg-white hover:bg-gray-50'}
-          `}
+            key={day} 
+            onClick={() => setSelectedDateFilter(isSelected ? null : dateKey)}
+            className={`min-h-[100px] p-2 border-r border-b border-gray-100 transition-colors cursor-pointer hover:bg-indigo-50/60 ${isCurrentDay ? 'bg-indigo-50/40' : 'bg-white'} ${isSelected ? 'ring-2 ring-inset ring-indigo-500 bg-indigo-50' : ''}`}
         >
-          <div className="flex justify-between items-start mb-2">
-            <span className={`
-              text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full
-              ${isCurrentDay ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500'}
-            `}>
-              {day}
-            </span>
-            {hasAppointments && (
-              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded-md">
-                {dayAppointments.length}
-              </span>
-            )}
+          <div className="flex justify-between items-start mb-1">
+            <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${isCurrentDay ? 'bg-indigo-600 text-white' : isSelected ? 'bg-indigo-500 text-white' : 'text-gray-400'}`}>{day}</span>
+            {dayAppointments.length > 0 && <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100 px-1.5 rounded-md">{dayAppointments.length}</span>}
           </div>
-
-          <div className="flex flex-col gap-1 overflow-y-auto max-h-[80px] custom-scrollbar">
-            {dayAppointments.map(apt => (
-              <div 
-                key={apt.id} 
-                className="text-[10px] bg-indigo-50 text-indigo-900 border border-indigo-100 rounded px-1.5 py-1 flex items-center justify-between gap-1 group/item cursor-default hover:bg-indigo-100 hover:border-indigo-200 transition-colors"
-                title={`${apt.time} - ${apt.clientName}`}
-              >
-                <div className="flex items-center gap-1 overflow-hidden">
-                    <span className="font-bold whitespace-nowrap">{apt.time}</span>
-                    <span className="truncate">{apt.clientName}</span>
-                </div>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); handleCancel(apt.id); }}
-                  className="hidden group-hover/item:block text-red-400 hover:text-red-600"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
+          <div className="flex flex-col gap-1 overflow-hidden">
+            {dayAppointments.slice(0, 3).map(apt => (
+              <div key={apt.id} className="text-[9px] bg-indigo-50 text-indigo-900 border border-indigo-100 rounded px-1 py-0.5 truncate">
+                {apt.time} • {apt.clientName.split(' ')[0]}
               </div>
             ))}
+            {dayAppointments.length > 3 && <div className="text-[9px] text-gray-400 pl-1">+{dayAppointments.length - 3} mais</div>}
           </div>
         </div>
       );
@@ -253,264 +202,132 @@ export const AdminDashboard: React.FC = () => {
 
   const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
+  // Filter list logic
+  const filteredAppointments = selectedDateFilter 
+    ? appointments.filter(a => a.date === selectedDateFilter)
+    : appointments;
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      
       {!isFirebaseInitialized && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-red-800 animate-fade-in">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-red-800">
               <CloudOff className="w-6 h-6 text-red-600" />
-              <div>
-                  <p className="font-bold text-sm">Banco de Dados Desconectado</p>
-                  <p className="text-xs">
-                    O sistema não está salvando dados na nuvem. Verifique a configuração das chaves do Firebase (VITE_FIREBASE_...).
-                  </p>
-              </div>
+              <div><p className="font-bold text-sm">Offline</p></div>
           </div>
-      )}
-
-      {isFirebaseInitialized && (
-         <div className="flex justify-end">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                <Cloud className="w-3 h-3" />
-                Conectado à Nuvem
-            </span>
-         </div>
       )}
 
       {/* Share Section */}
-      <div className="bg-gradient-to-r from-indigo-700 to-indigo-900 rounded-xl shadow-lg p-6 text-white flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="bg-gradient-to-r from-gray-900 to-indigo-900 rounded-xl shadow-lg p-6 text-white flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-start gap-4">
           <div className="bg-white/10 p-3 rounded-lg backdrop-blur-sm">
-            <Share2 className="w-8 h-8 text-indigo-100" />
+            <Share2 className="w-8 h-8 text-indigo-200" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Enviar Agenda para Clientes</h2>
-            <p className="text-indigo-200 text-sm mt-1 max-w-md">
-              Copie o link direto ou uma mensagem de convite pronta para enviar no WhatsApp dos seus clientes.
-            </p>
+            <h2 className="text-xl font-bold">Divulgue sua Agenda</h2>
+            <p className="text-indigo-200 text-sm mt-1 max-w-md">Envie o link do seu aplicativo profissional para os clientes escolherem os horários.</p>
           </div>
         </div>
-        
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-          <button 
-            onClick={handleShareLink}
-            className="flex items-center justify-center gap-2 bg-white text-indigo-900 px-4 py-3 rounded-lg font-semibold hover:bg-indigo-50 transition-colors shadow-sm min-w-[140px]"
-          >
-            {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            {copiedLink ? 'Copiado!' : 'Copiar Link'}
+          <button onClick={handleShareLink} className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-3 rounded-lg font-semibold transition-all">
+            {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} Link
           </button>
-          
-          <button 
-            onClick={handleShareInvite}
-            className="flex items-center justify-center gap-2 bg-green-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors shadow-sm min-w-[160px]"
-          >
-            {copiedInvite ? <Check className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
-            {copiedInvite ? 'Copiado!' : 'Copiar Convite'}
+          <button onClick={handleShareInvite} className="flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-green-500/20">
+            {copiedInvite ? <Check className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />} Copiar Convite WhatsApp
           </button>
         </div>
       </div>
 
-      {/* Admin Controls Header */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex flex-col">
-            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-indigo-600" />
-                Painel Administrativo
-            </h2>
-            <div className="text-xs text-gray-400 flex items-center gap-2 mt-1">
-                <Clock className="w-3 h-3" />
-                {isLoading ? 'Sincronizando...' : `Atualizado: ${new Date(lastUpdated).toLocaleTimeString()}`}
-            </div>
+      {/* Stats & Controls */}
+      <div className="flex flex-col md:flex-row gap-6">
+          <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+             <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-gray-700 flex items-center gap-2"><BarChart2 className="w-5 h-5 text-indigo-600"/> Visão Geral (30 dias)</h3>
+             </div>
+             <div className="h-32 flex items-end justify-between gap-1 px-2 border-b border-gray-100 pb-2">
+                 {occupancyData.map((d, i) => (
+                     <div key={i} className="flex-1 bg-indigo-100 hover:bg-indigo-500 transition-colors rounded-t-sm relative group" style={{height: `${Math.max(d.rate, 5)}%`}}>
+                         <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-gray-900 text-white text-xs p-1 rounded whitespace-nowrap z-10">{d.count} agend.</div>
+                     </div>
+                 ))}
+             </div>
           </div>
-
-          <div className="flex gap-2">
-            <button 
-                onClick={handleClearAll}
-                className="text-xs text-red-600 bg-red-50 hover:bg-red-100 flex items-center gap-1 px-4 py-2 rounded-lg border border-red-200 transition-colors font-medium"
-            >
-                <Eraser className="w-4 h-4" />
-                Limpar Todos os Dados
-            </button>
+          <div className="w-full md:w-80 bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center gap-3">
+             <button onClick={handleClearAll} className="w-full text-xs text-red-600 bg-red-50 hover:bg-red-100 p-3 rounded-lg border border-red-100 transition-colors font-medium flex items-center justify-center gap-2">
+                <Eraser className="w-4 h-4" /> Resetar Banco de Dados
+             </button>
+             <button onClick={downloadXLS} className="w-full text-xs text-gray-700 bg-gray-50 hover:bg-gray-100 p-3 rounded-lg border border-gray-200 transition-colors font-medium flex items-center justify-center gap-2">
+                <Download className="w-4 h-4" /> Baixar Relatório Completo
+             </button>
           </div>
       </div>
 
-      {/* Chart Section */}
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-                <BarChart2 className="w-6 h-6 text-indigo-600" />
-                <div>
-                    <h2 className="text-xl font-bold text-gray-900">Ocupação Diária</h2>
-                    <p className="text-xs text-gray-500">Dados da Nuvem</p>
-                </div>
-            </div>
-            <div className="text-sm font-medium bg-gray-100 px-3 py-1 rounded-full text-gray-600">
-                Total Agendamentos: {appointments.length}
-            </div>
-        </div>
-        
-        {occupancyData.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-                <BarChart2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-gray-500 font-medium">Aguardando dados...</p>
-            </div>
-        ) : (
-            <div className="overflow-x-auto pb-4 custom-scrollbar">
-                {/* Chart Container */}
-                <div className="flex items-end gap-1 min-w-[800px] h-64 border-b border-gray-200 px-2 pt-8 relative">
-                    {/* Background Grid Lines */}
-                    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between text-[10px] text-gray-300 pl-1 pb-6">
-                        <span className="border-b border-dashed border-gray-100 w-full">100%</span>
-                        <span className="border-b border-dashed border-gray-100 w-full">50%</span>
-                        <span className="border-b border-gray-100 w-full">0%</span>
+      {/* Calendar & List */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+             <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                 <h3 className="font-bold text-gray-800 flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-indigo-600"/> Calendário</h3>
+                 <div className="flex gap-1">
+                     <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-200 rounded"><ChevronLeft className="w-5 h-5 text-gray-600"/></button>
+                     <span className="text-sm font-medium px-2 py-1">{currentMonth.toLocaleDateString('pt-BR', {month: 'long'})}</span>
+                     <button onClick={() => changeMonth(1)} className="p-1 hover:bg-gray-200 rounded"><ChevronRight className="w-5 h-5 text-gray-600"/></button>
+                 </div>
+             </div>
+             <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50">
+                {weekDays.map(d => <div key={d} className="py-2 text-center text-[10px] font-bold text-gray-400 uppercase">{d}</div>)}
+             </div>
+             <div className="grid grid-cols-7">
+                {renderCalendarGrid()}
+             </div>
+             <div className="p-2 text-xs text-gray-400 text-center bg-gray-50 border-t border-gray-100">
+                Clique em um dia para filtrar a lista de agendamentos
+             </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[500px]">
+             <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                 <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                    Agendamentos
+                    {selectedDateFilter && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{selectedDateFilter.split('-').reverse().slice(0,2).join('/')}</span>}
+                 </h3>
+                 {selectedDateFilter && (
+                    <button onClick={() => setSelectedDateFilter(null)} className="text-xs text-gray-500 flex items-center gap-1 hover:text-gray-900">
+                        <X className="w-3 h-3" /> Limpar
+                    </button>
+                 )}
+             </div>
+             <div className="overflow-y-auto flex-1 p-2 space-y-2 custom-scrollbar">
+                 {filteredAppointments.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full text-center p-6">
+                        <Filter className="w-10 h-10 text-gray-300 mb-2" />
+                        <p className="text-gray-400 text-sm">Nenhum agendamento encontrado {selectedDateFilter ? 'nesta data' : ''}.</p>
                     </div>
-
-                    {occupancyData.map((stat) => {
-                         const isToday = stat.date === formatDateKey(new Date());
-                         return (
-                            <div key={stat.date} className="flex flex-col items-center flex-1 group relative min-w-[20px] h-full justify-end z-10">
-                                <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs rounded py-2 px-3 transition-opacity duration-200 whitespace-nowrap shadow-xl pointer-events-none z-20">
-                                    <div className="font-bold border-b border-gray-700 pb-1 mb-1 text-center text-indigo-200">
-                                        {stat.date.split('-').reverse().join('/')}
-                                    </div>
-                                    <div className="text-center">{stat.count} agendamentos</div>
-                                    <div className="text-center font-bold text-indigo-300">{stat.rate}% ocupado</div>
-                                </div>
-                                <div 
-                                    className={`w-full mx-0.5 rounded-t-sm transition-all relative ${
-                                        isToday ? 'bg-indigo-600' : 'bg-indigo-400 hover:bg-indigo-500'
-                                    }`}
-                                    style={{ 
-                                        height: `${Math.max(stat.rate, 1)}%`, 
-                                        minHeight: stat.count > 0 ? '4px' : '0',
-                                        opacity: 0.9
-                                    }} 
-                                />
-                                <div className="absolute top-full mt-2 w-full flex justify-center">
-                                   {(parseInt(stat.date.split('-')[2]) % 5 === 0 || isToday) && (
-                                       <span className={`text-[10px] whitespace-nowrap ${isToday ? 'font-bold text-indigo-700' : 'text-gray-400'}`}>
-                                            {stat.date.split('-')[2]}/{stat.date.split('-')[1]}
-                                       </span>
-                                   )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        )}
-      </div>
-
-      {/* Calendar View (Gestão à Vista) */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                <div className="bg-indigo-50 p-2 rounded-lg">
-                    <CalendarIcon className="w-6 h-6 text-indigo-600" />
-                </div>
-                <div>
-                    <h2 className="text-xl font-bold text-gray-900 capitalize">
-                        {currentMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-                    </h2>
-                    <p className="text-xs text-gray-500">Gestão visual de agendamentos</p>
-                </div>
-            </div>
-            <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-lg">
-                <button 
-                    onClick={() => changeMonth(-1)}
-                    className="p-2 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-600"
-                >
-                    <ChevronLeft className="w-5 h-5" />
-                </button>
-                <button 
-                    onClick={() => setCurrentMonth(new Date())}
-                    className="px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-white hover:shadow-sm rounded-md transition-all"
-                >
-                    Hoje
-                </button>
-                <button 
-                    onClick={() => changeMonth(1)}
-                    className="p-2 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-600"
-                >
-                    <ChevronRight className="w-5 h-5" />
-                </button>
-            </div>
-        </div>
-
-        <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50">
-            {weekDays.map(day => (
-                <div key={day} className="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">
-                    {day}
-                </div>
-            ))}
-        </div>
-        <div className="grid grid-cols-7">
-            {renderCalendarGrid()}
-        </div>
-      </div>
-
-      {/* List View (Secondary) */}
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
-        <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center bg-gray-50 gap-4">
-          <div className="flex items-center gap-3">
-             <h3 className="text-md font-bold text-gray-700">Todos os Registros</h3>
+                 )}
+                 {filteredAppointments.map(apt => (
+                     <div key={apt.id} className="p-3 rounded-lg border border-gray-100 hover:border-indigo-200 hover:shadow-sm transition-all bg-white group flex flex-col gap-2">
+                         <div className="flex justify-between items-start">
+                             <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{apt.time}</span>
+                                <span className="text-xs font-medium text-indigo-600">{apt.date.split('-').reverse().slice(0,2).join('/')}</span>
+                             </div>
+                         </div>
+                         <h4 className="font-bold text-gray-800 text-sm">{apt.clientName}</h4>
+                         
+                         <div className="flex gap-2 mt-1">
+                            <button onClick={() => openWhatsapp(apt.confirmationMessage || '', apt.clientWhatsapp)} className="flex-1 text-xs flex items-center justify-center gap-1 text-green-700 bg-green-50 py-1.5 rounded hover:bg-green-100 transition-colors border border-green-100">
+                                <Smartphone className="w-3 h-3" /> WhatsApp
+                            </button>
+                            <button 
+                                onClick={() => handleCancel(apt)} 
+                                className="flex-1 text-xs flex items-center justify-center gap-1 text-red-600 bg-red-50 py-1.5 rounded hover:bg-red-600 hover:text-white transition-all border border-red-100 font-medium"
+                                title="Liberar horário e remover do banco de dados"
+                            >
+                                <Trash2 className="w-3 h-3" /> Cancelar
+                            </button>
+                         </div>
+                     </div>
+                 ))}
+             </div>
           </div>
-          <button 
-                onClick={downloadXLS}
-                disabled={appointments.length === 0}
-                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
-            >
-                <Download className="w-4 h-4" />
-                Baixar Relatório CSV
-          </button>
-        </div>
-        
-        <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-          {appointments.length === 0 ? (
-            <div className="p-8 text-center text-gray-500 text-sm">
-               <p>Nenhum agendamento encontrado.</p>
-            </div>
-          ) : (
-            <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-10 shadow-sm bg-white">
-                  <tr className="text-gray-500 text-xs uppercase tracking-wider">
-                    <th className="p-3 font-semibold border-b border-gray-100 pl-6">Data</th>
-                    <th className="p-3 font-semibold border-b border-gray-100">Hora</th>
-                    <th className="p-3 font-semibold border-b border-gray-100">Cliente</th>
-                    <th className="p-3 font-semibold border-b border-gray-100 text-right pr-6">Ação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50 text-sm">
-                  {appointments.map((apt) => (
-                    <tr key={apt.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="p-3 pl-6 text-gray-900 font-medium">
-                        {apt.date.split('-').reverse().join('/')}
-                      </td>
-                      <td className="p-3 text-gray-600">{apt.time}</td>
-                      <td className="p-3 text-gray-800 flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">
-                            {apt.clientName.charAt(0)}
-                        </span>
-                        {apt.clientName}
-                      </td>
-                      <td className="p-3 pr-6 text-right flex items-center justify-end gap-2">
-                        <button 
-                            onClick={() => openWhatsapp(apt.confirmationMessage || '', apt.clientWhatsapp)}
-                            className="text-green-500 hover:bg-green-50 p-2 rounded transition-all"
-                            title="Enviar Confirmação WhatsApp"
-                        >
-                            <Smartphone className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleCancel(apt.id)} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-2 rounded transition-all" title="Cancelar">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-          )}
-        </div>
       </div>
     </div>
   );

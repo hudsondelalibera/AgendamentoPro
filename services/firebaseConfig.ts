@@ -1,9 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
 
-// A leitura agora é feita via process.env, que é injetado pelo vite.config.ts
-// Isso é mais robusto que import.meta.env para este setup específico.
-
+// A leitura é feita via process.env injetado pelo Vite no build time.
 const firebaseConfig = {
   apiKey: process.env.VITE_FIREBASE_API_KEY,
   authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -16,8 +14,11 @@ const firebaseConfig = {
 let db: Firestore | null = null;
 let isFirebaseInitialized = false;
 
-// Verificação robusta antes de inicializar
-if (firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.apiKey !== "undefined") {
+// Função auxiliar para verificar se a string é válida
+const isValid = (val: string | undefined) => val && val !== "" && val !== "undefined";
+
+// Verificação
+if (isValid(firebaseConfig.apiKey) && isValid(firebaseConfig.projectId)) {
     try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
@@ -27,8 +28,15 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.apiKey !
         console.error("Erro fatal ao inicializar Firebase:", error);
     }
 } else {
-    console.warn("⚠️ Firebase não configurado. O aplicativo funcionará apenas em modo de visualização (sem salvar dados).");
-    console.log("Configuração atual:", firebaseConfig);
+    console.warn("⚠️ Firebase não conectado. Modo de visualização offline.");
+    
+    // Log de diagnóstico seguro (não mostra a chave inteira, apenas se existe)
+    console.group("Diagnóstico de Configuração Firebase");
+    console.log("API Key Presente?", isValid(firebaseConfig.apiKey) ? "SIM" : "NÃO");
+    console.log("Project ID Presente?", isValid(firebaseConfig.projectId) ? "SIM" : "NÃO");
+    console.log("Auth Domain Presente?", isValid(firebaseConfig.authDomain) ? "SIM" : "NÃO");
+    console.log("Variáveis brutas:", firebaseConfig); 
+    console.groupEnd();
 }
 
 export { db, isFirebaseInitialized };

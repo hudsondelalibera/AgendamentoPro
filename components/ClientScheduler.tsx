@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Appointment, TIME_SLOTS, DaySlot } from '../types';
 import { saveAppointment, getAppointments } from '../services/storageService';
-import { generateConfirmationMessage } from '../services/geminiService';
-import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, ChevronRight, AlertCircle, CloudOff, ArrowLeft } from 'lucide-react';
+import { sendAutomaticConfirmation } from '../services/whatsappService';
+import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, ChevronRight, AlertCircle, CloudOff, ArrowLeft, Send } from 'lucide-react';
 import { isFirebaseInitialized } from '../services/firebaseConfig';
 
 interface ClientSchedulerProps {
@@ -15,6 +15,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
   const [clientName, setClientName] = useState('');
   const [clientWhatsapp, setClientWhatsapp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
   const [step, setStep] = useState<0 | 1>(0); // 0: Date/Time, 1: Info Form
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -147,24 +148,28 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     if (!selectedDate || !selectedTime || !clientName || !clientWhatsapp) return;
 
     setIsSubmitting(true);
+    setSendingWhatsapp(true); // Estado visual de "Enviando Whats..."
     setErrorMsg(null);
 
     try {
-      const message = await generateConfirmationMessage(clientName, selectedDate, selectedTime);
-      
       const newAppointment: Appointment = {
         id: '', 
         date: selectedDate,
         time: selectedTime,
         clientName,
         clientWhatsapp,
-        confirmationMessage: message,
+        confirmationMessage: '', // Será gerada automaticamente no envio
         createdAt: Date.now()
       };
 
+      // 1. Salvar no Banco de Dados
       const success = await saveAppointment(newAppointment);
 
       if (success) {
+        // 2. Disparar WhatsApp Automático (Gateway)
+        await sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime);
+        
+        setSendingWhatsapp(false);
         setShowSuccessModal(true);
         onBookingComplete();
       } else {
@@ -179,6 +184,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
       setErrorMsg("Ocorreu um erro técnico. Tente novamente.");
     } finally {
       setIsSubmitting(false);
+      setSendingWhatsapp(false);
     }
   };
 
@@ -382,7 +388,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                                 placeholder="(11) 99999-9999"
                             />
                             </div>
-                            <p className="text-xs text-gray-400 mt-2 pl-1">Enviaremos a confirmação para este número.</p>
+                            <p className="text-xs text-gray-400 mt-2 pl-1">Enviaremos a confirmação automática neste número.</p>
                         </div>
 
                         <button
@@ -397,31 +403,48 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                             }
                             `}
                         >
-                            {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <CheckCircle className="w-6 h-6" />}
-                            {isSubmitting ? 'Agendando...' : 'Confirmar Agendamento'}
+                            {isSubmitting 
+                             ? <Loader2 className="w-6 h-6 animate-spin" /> 
+                             : <CheckCircle className="w-6 h-6" />
+                            }
+                            {isSubmitting 
+                             ? (sendingWhatsapp ? 'Enviando WhatsApp...' : 'Agendando...') 
+                             : 'Confirmar Agendamento'
+                            }
                         </button>
                     </form>
                 </div>
             )}
         </div>
 
-        {/* Success Modal */}
+        {/* Success Modal - AUTOMATIC MODE */}
         {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center relative animate-bounce-slow border-t-4 border-green-500">
             
-            <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6 relative">
               <CheckCircle className="w-10 h-10 text-green-500" />
+              <div className="absolute -bottom-1 -right-1 bg-green-500 rounded-full p-1.5 border-2 border-white">
+                 <Smartphone className="w-3 h-3 text-white" />
+              </div>
             </div>
 
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Agendado!</h2>
-            <p className="text-gray-500 mb-6">Te esperamos no dia <span className="font-bold text-gray-800">{selectedDate?.split('-').reverse().join('/')}</span> às <span className="font-bold text-gray-800">{selectedTime}</span>.</p>
+            <p className="text-gray-500 mb-6 text-sm">
+                A confirmação foi enviada automaticamente para seu WhatsApp: <br/>
+                <span className="font-bold text-gray-800">{clientWhatsapp}</span>
+            </p>
+
+            <div className="bg-green-50 text-green-700 text-xs p-3 rounded-lg mb-6 flex items-start gap-2 text-left">
+                <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>O comprovante já está no seu celular. Te aguardamos no dia {selectedDate?.split('-').reverse().join('/')} às {selectedTime}.</p>
+            </div>
 
             <button
                 onClick={resetForm}
                 className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-black transition-all"
             >
-                Fechar
+                Fechar e Novo Agendamento
             </button>
           </div>
         </div>

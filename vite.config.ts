@@ -9,8 +9,6 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // Injeta apenas a chave da API do Gemini. 
-      // As chaves do Firebase agora estão hardcoded no arquivo de serviço para garantir funcionamento.
       'process.env.API_KEY': JSON.stringify(process.env.API_KEY || env.API_KEY || ''),
     }
   };

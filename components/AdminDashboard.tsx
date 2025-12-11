@@ -1,17 +1,24 @@
+
 import React, { useEffect, useState } from 'react';
 import { Appointment } from '../types';
 import { subscribeToAppointments, cancelAppointment, clearAllAppointments } from '../services/storageService';
-import { Trash2, BarChart2, Download, Eraser, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CloudOff, Filter, X, Smartphone } from 'lucide-react';
+import { sendAppointmentLink } from '../services/whatsappService';
+import { Trash2, BarChart2, Download, Eraser, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CloudOff, Filter, X, Smartphone, Send, ExternalLink } from 'lucide-react';
 import { isFirebaseInitialized } from '../services/firebaseConfig';
 
 export const AdminDashboard: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  // Tipagem atualizada para incluir displayDate
   const [occupancyData, setOccupancyData] = useState<{date: string, displayDate: string, count: number, rate: number, isToday: boolean}[]>([]);
   const [copiedLink, setCopiedLink] = useState(false);
   const [selectedDateFilter, setSelectedDateFilter] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   
+  // Estados para o envio de convite
+  const [inviteName, setInviteName] = useState('');
+  const [invitePhone, setInvitePhone] = useState('');
+  const [isSendingInvite, setIsSendingInvite] = useState(false);
+  const [inviteStatus, setInviteStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const getNoonDate = (date: Date = new Date()) => {
@@ -42,6 +49,30 @@ export const AdminDashboard: React.FC = () => {
     copyToClipboard(url);
   };
 
+  const handleSendInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteName || !invitePhone) return;
+
+    setIsSendingInvite(true);
+    setInviteStatus('idle');
+
+    try {
+      const success = await sendAppointmentLink(invitePhone, inviteName);
+      if (success) {
+        setInviteStatus('success');
+        setInviteName('');
+        setInvitePhone('');
+        setTimeout(() => setInviteStatus('idle'), 3000);
+      } else {
+        setInviteStatus('error');
+      }
+    } catch (error) {
+      setInviteStatus('error');
+    } finally {
+      setIsSendingInvite(false);
+    }
+  };
+
   const openWhatsapp = (phone: string) => {
       const cleanNumber = phone.replace(/\D/g, '');
       if (!cleanNumber) return;
@@ -59,7 +90,6 @@ export const AdminDashboard: React.FC = () => {
     const today = getNoonDate();
     const todayKey = formatDateKey(today);
     
-    // Capacidade estimada: Das 07:00 as 20:00 (13 horas) + slot das 20h = ~14 agendamentos de 1h
     const MAX_DAILY_CAPACITY = 14; 
 
     for(let i = -15; i <= 15; i++) {
@@ -68,10 +98,9 @@ export const AdminDashboard: React.FC = () => {
         const dateKey = formatDateKey(d);
         const dayOfWeek = d.getDay(); 
 
-        if (dayOfWeek === 0) continue; // Pula domingos
+        if (dayOfWeek === 0) continue; 
 
         const count = countsByDate[dateKey] || 0;
-        // Limita a taxa visual a 100% mesmo se houver overbooking manual
         const rate = Math.min(Math.round((count / MAX_DAILY_CAPACITY) * 100), 100); 
         
         rangeStats.push({ 
@@ -99,14 +128,10 @@ export const AdminDashboard: React.FC = () => {
   }, []);
 
   const handleCancel = async (e: React.MouseEvent, apt: Appointment) => {
-    // 1. Pára a propagação para evitar cliques no card pai (se houver)
     e.stopPropagation();
     e.preventDefault();
 
-    // 2. Bloqueio simples para evitar duplo clique
     if (isDeleting === apt.id) return;
-
-    console.log("Tentando cancelar agendamento ID:", apt.id);
 
     const dateFormatted = apt.date.split('-').reverse().join('/');
     const confirmMessage = `Tem certeza que deseja apagar este agendamento?\n\nCliente: ${apt.clientName}\nDia: ${dateFormatted} às ${apt.time}`;
@@ -161,7 +186,6 @@ export const AdminDashboard: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  // Calendar Helpers
   const getDaysInMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   const getFirstDayOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   const changeMonth = (offset: number) => {
@@ -191,12 +215,10 @@ export const AdminDashboard: React.FC = () => {
     for (let day = 1; day <= totalDays; day++) {
       const dayAppointments = getAppointmentsForDay(day);
       const isCurrentDay = isToday(day);
-      
       const year = currentMonth.getFullYear();
       const month = String(currentMonth.getMonth() + 1).padStart(2, '0');
       const dayStr = String(day).padStart(2, '0');
       const dateKey = `${year}-${month}-${dayStr}`;
-      
       const isSelected = selectedDateFilter === dateKey;
 
       days.push(
@@ -224,8 +246,6 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-
-  // Filter list logic
   const filteredAppointments = selectedDateFilter 
     ? appointments.filter(a => a.date === selectedDateFilter)
     : appointments;
@@ -239,32 +259,79 @@ export const AdminDashboard: React.FC = () => {
           </div>
       )}
 
-      {/* Share Section */}
-      <div className="bg-gradient-to-r from-gray-900 to-indigo-900 rounded-xl shadow-lg p-6 text-white flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="flex items-start gap-4">
-          <div className="bg-white/10 p-3 rounded-lg backdrop-blur-sm">
-            <Share2 className="w-8 h-8 text-indigo-200" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold">Divulgue sua Agenda</h2>
-            <p className="text-indigo-200 text-sm mt-1 max-w-md">Envie o link do seu aplicativo profissional para os clientes escolherem os horários.</p>
-          </div>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-          <button onClick={handleShareLink} className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-3 rounded-lg font-semibold transition-all w-full md:w-auto">
-            {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} Copiar Link de Agendamento
-          </button>
-        </div>
+      {/* Hero Section: Enviar Calendário */}
+      <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-blue-900 rounded-2xl shadow-xl text-white overflow-hidden p-6 md:p-8 flex flex-col md:flex-row gap-8 items-center">
+         
+         <div className="flex-1 space-y-4">
+             <div className="inline-flex items-center gap-2 bg-indigo-500/30 px-3 py-1 rounded-full text-xs font-bold text-indigo-200 uppercase tracking-wide border border-indigo-400/30">
+                 <Smartphone className="w-3 h-3" /> Z-API Conectada
+             </div>
+             <h2 className="text-3xl font-bold leading-tight">Envie o Calendário para seus Clientes</h2>
+             <p className="text-indigo-100 text-sm md:text-base max-w-lg">
+                 Envie o link de agendamento diretamente para o WhatsApp do seu cliente. Ele receberá uma mensagem profissional e poderá escolher o horário ideal.
+             </p>
+             <button onClick={handleShareLink} className="flex items-center gap-2 text-xs font-bold text-indigo-300 hover:text-white transition-colors">
+                {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copiedLink ? "Link copiado!" : "Copiar link manualmente"}
+             </button>
+         </div>
+
+         <div className="w-full md:w-[400px] bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-6 shadow-2xl">
+             <form onSubmit={handleSendInvite} className="space-y-4">
+                 <div>
+                     <label className="block text-xs font-bold text-indigo-200 uppercase mb-1">Nome do Cliente</label>
+                     <input 
+                        type="text" 
+                        value={inviteName}
+                        onChange={(e) => setInviteName(e.target.value)}
+                        placeholder="Ex: Maria Silva"
+                        className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-indigo-300/50 focus:outline-none focus:bg-black/40 focus:border-indigo-400 transition-colors text-sm"
+                     />
+                 </div>
+                 <div>
+                     <label className="block text-xs font-bold text-indigo-200 uppercase mb-1">WhatsApp</label>
+                     <input 
+                        type="text" 
+                        value={invitePhone}
+                        onChange={(e) => setInvitePhone(e.target.value.replace(/\D/g, ''))}
+                        placeholder="(00) 00000-0000"
+                        className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-indigo-300/50 focus:outline-none focus:bg-black/40 focus:border-indigo-400 transition-colors text-sm"
+                     />
+                 </div>
+                 
+                 <button 
+                    type="submit" 
+                    disabled={isSendingInvite || !inviteName || !invitePhone}
+                    className={`
+                        w-full py-3 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg
+                        ${inviteStatus === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' : 
+                          inviteStatus === 'error' ? 'bg-red-500 hover:bg-red-600 text-white' :
+                          'bg-white text-indigo-900 hover:bg-indigo-50'}
+                        disabled:opacity-70 disabled:cursor-not-allowed
+                    `}
+                 >
+                    {isSendingInvite ? (
+                        <div className="w-5 h-5 border-2 border-indigo-900/30 border-t-indigo-900 rounded-full animate-spin"></div>
+                    ) : inviteStatus === 'success' ? (
+                        <>Enviado com Sucesso <Check className="w-4 h-4" /></>
+                    ) : inviteStatus === 'error' ? (
+                        'Erro ao Enviar'
+                    ) : (
+                        <>Enviar Calendário <Send className="w-4 h-4" /></>
+                    )}
+                 </button>
+             </form>
+         </div>
+
       </div>
 
       {/* Stats & Controls */}
       <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-gray-700 flex items-center gap-2"><BarChart2 className="w-5 h-5 text-indigo-600"/> Visão Geral (30 dias)</h3>
+                <h3 className="font-bold text-gray-700 flex items-center gap-2"><BarChart2 className="w-5 h-5 text-indigo-600"/> Ocupação (30 dias)</h3>
              </div>
              <div className="h-32 flex items-end justify-between gap-1 px-2 border-b border-gray-100 pb-2 relative">
-                 {/* Linha guia de 50% */}
                  <div className="absolute top-1/2 left-0 w-full border-t border-dashed border-gray-200 -z-10"></div>
                  
                  {occupancyData.map((d, i) => (
@@ -274,25 +341,17 @@ export const AdminDashboard: React.FC = () => {
                         style={{height: `${Math.max(d.rate, 8)}%`}}
                         title={`${d.displayDate}: ${d.count} agendamentos`}
                      >
-                         <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-900 text-white text-[10px] p-1.5 rounded shadow-lg whitespace-nowrap z-20 pointer-events-none">
-                            <span className="font-bold block text-center">{d.displayDate}</span>
-                            {d.count} agend. ({d.rate}%)
-                         </div>
                      </div>
                  ))}
              </div>
-             <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
-                 <span>15 dias atrás</span>
-                 <span>Hoje</span>
-                 <span>Daqui 15 dias</span>
-             </div>
           </div>
           <div className="w-full md:w-80 bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center gap-3">
+             <h3 className="font-bold text-gray-700 text-sm mb-1">Ações Administrativas</h3>
+             <button onClick={downloadXLS} className="w-full text-xs text-gray-700 bg-gray-50 hover:bg-gray-100 p-3 rounded-lg border border-gray-200 transition-colors font-medium flex items-center justify-center gap-2">
+                <Download className="w-4 h-4" /> Baixar Relatório (CSV)
+             </button>
              <button onClick={handleClearAll} className="w-full text-xs text-red-600 bg-red-50 hover:bg-red-100 p-3 rounded-lg border border-red-100 transition-colors font-medium flex items-center justify-center gap-2">
                 <Eraser className="w-4 h-4" /> Resetar Banco de Dados
-             </button>
-             <button onClick={downloadXLS} className="w-full text-xs text-gray-700 bg-gray-50 hover:bg-gray-100 p-3 rounded-lg border border-gray-200 transition-colors font-medium flex items-center justify-center gap-2">
-                <Download className="w-4 h-4" /> Baixar Relatório Completo
              </button>
           </div>
       </div>
@@ -301,7 +360,7 @@ export const AdminDashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                 <h3 className="font-bold text-gray-800 flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-indigo-600"/> Calendário</h3>
+                 <h3 className="font-bold text-gray-800 flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-indigo-600"/> Agenda Mensal</h3>
                  <div className="flex gap-1">
                      <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-200 rounded"><ChevronLeft className="w-5 h-5 text-gray-600"/></button>
                      <span className="text-sm font-medium px-2 py-1">{currentMonth.toLocaleDateString('pt-BR', {month: 'long'})}</span>
@@ -314,20 +373,16 @@ export const AdminDashboard: React.FC = () => {
              <div className="grid grid-cols-7">
                 {renderCalendarGrid()}
              </div>
-             <div className="p-2 text-xs text-gray-400 text-center bg-gray-50 border-t border-gray-100">
-                Clique em um dia para filtrar a lista de agendamentos
-             </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[500px]">
              <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                  <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                    Agendamentos
-                    {selectedDateFilter && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{selectedDateFilter.split('-').reverse().slice(0,2).join('/')}</span>}
+                    {selectedDateFilter ? `Agendamentos (${selectedDateFilter.split('-').reverse().slice(0,2).join('/')})` : 'Próximos Agendamentos'}
                  </h3>
                  {selectedDateFilter && (
                     <button onClick={() => setSelectedDateFilter(null)} className="text-xs text-gray-500 flex items-center gap-1 hover:text-gray-900">
-                        <X className="w-3 h-3" /> Limpar
+                        <X className="w-3 h-3" /> Limpar Filtro
                     </button>
                  )}
              </div>
@@ -335,7 +390,7 @@ export const AdminDashboard: React.FC = () => {
                  {filteredAppointments.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full text-center p-6">
                         <Filter className="w-10 h-10 text-gray-300 mb-2" />
-                        <p className="text-gray-400 text-sm">Nenhum agendamento encontrado {selectedDateFilter ? 'nesta data' : ''}.</p>
+                        <p className="text-gray-400 text-sm">Nenhum horário marcado.</p>
                     </div>
                  )}
                  {filteredAppointments.map(apt => (
@@ -361,7 +416,6 @@ export const AdminDashboard: React.FC = () => {
                                 onClick={(e) => handleCancel(e, apt)} 
                                 disabled={isDeleting === apt.id}
                                 className={`flex-1 text-xs flex items-center justify-center gap-1 text-red-600 bg-red-50 py-2.5 rounded-lg hover:bg-red-600 hover:text-white transition-all border border-red-100 font-bold ${isDeleting === apt.id ? 'opacity-50 cursor-wait' : ''}`}
-                                title="Liberar horário e remover do banco de dados"
                             >
                                 <Trash2 className="w-3 h-3" /> {isDeleting === apt.id ? '...' : 'Cancelar'}
                             </button>

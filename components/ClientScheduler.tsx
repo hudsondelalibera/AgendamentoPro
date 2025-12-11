@@ -187,10 +187,11 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
       const success = await saveAppointment(newAppointment);
 
       if (success) {
-        // 2. Dispara o WhatsApp e AGUARDA (await)
-        // Isso garante que a requisição saia do navegador antes de desmontar o componente
-        // O timeout interno no service garante que não ficaremos travados para sempre
+        // 2. Dispara o WhatsApp
         await sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime);
+        
+        // Pequeno delay para garantir que o navegador processe a requisição de rede antes de renderizar o sucesso
+        await new Promise(resolve => setTimeout(resolve, 800));
 
         // 3. Mostra sucesso
         setShowSuccessModal(true);

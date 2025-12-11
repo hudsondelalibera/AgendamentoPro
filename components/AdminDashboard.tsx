@@ -73,7 +73,8 @@ export const AdminDashboard: React.FC = () => {
     const today = getNoonDate();
     const todayKey = formatDateKey(today);
     
-    const MAX_DAILY_CAPACITY = 14; 
+    // Capacidade total de horas por dia (07:00 as 20:00 = 13.5 horas de atendimento)
+    const MAX_DAILY_HOURS = 13.5; 
 
     for(let i = -15; i <= 15; i++) {
         const d = new Date(today);
@@ -84,7 +85,8 @@ export const AdminDashboard: React.FC = () => {
         if (dayOfWeek === 0) continue; 
 
         const count = countsByDate[dateKey] || 0;
-        const rate = Math.min(Math.round((count / MAX_DAILY_CAPACITY) * 100), 100); 
+        // Fórmula: Total Agendado / Total Horas * 100
+        const rate = Math.min(Math.round((count / MAX_DAILY_HOURS) * 100), 100); 
         
         rangeStats.push({ 
             date: dateKey, 
@@ -310,10 +312,16 @@ export const AdminDashboard: React.FC = () => {
                  {occupancyData.map((d, i) => (
                      <div 
                         key={i} 
-                        className={`flex-1 transition-all rounded-t-sm relative group cursor-pointer ${d.isToday ? 'bg-indigo-600' : 'bg-indigo-200 hover:bg-indigo-400'}`} 
+                        className={`flex-1 transition-all rounded-t-sm relative group cursor-pointer flex flex-col justify-end items-center ${d.isToday ? 'bg-indigo-600' : 'bg-indigo-200 hover:bg-indigo-400'}`} 
                         style={{height: `${Math.max(d.rate, 8)}%`}}
-                        title={`${d.displayDate}: ${d.count} agendamentos`}
+                        title={`${d.displayDate}\n${d.count} Horas Agendadas\n${d.rate}% de Ocupação`}
                      >
+                        {/* Exibir porcentagem se houver espaço e valor relevante */}
+                        {d.rate >= 15 && (
+                          <span className={`text-[9px] font-bold mb-1 hidden sm:block ${d.isToday ? 'text-indigo-100' : 'text-indigo-800'}`}>
+                            {d.rate}%
+                          </span>
+                        )}
                      </div>
                  ))}
              </div>

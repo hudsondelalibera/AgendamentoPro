@@ -1,42 +1,34 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
 
-// Função segura para acessar variáveis de ambiente sem quebrar o build
-const getEnv = (key: string): string => {
-  try {
-    // @ts-ignore
-    return import.meta.env[key] || '';
-  } catch (e) {
-    return '';
-  }
-};
+// A leitura agora é feita via process.env, que é injetado pelo vite.config.ts
+// Isso é mais robusto que import.meta.env para este setup específico.
 
 const firebaseConfig = {
-  apiKey: getEnv('VITE_FIREBASE_API_KEY'),
-  authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN'),
-  projectId: getEnv('VITE_FIREBASE_PROJECT_ID'),
-  storageBucket: getEnv('VITE_FIREBASE_STORAGE_BUCKET'),
-  messagingSenderId: getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
-  appId: getEnv('VITE_FIREBASE_APP_ID')
+  apiKey: process.env.VITE_FIREBASE_API_KEY,
+  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.VITE_FIREBASE_APP_ID
 };
 
 let db: Firestore | null = null;
 let isFirebaseInitialized = false;
 
-try {
-    // Validação mínima para tentar conectar: precisa de API Key e Project ID
-    if (firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.apiKey.length > 5) {
+// Verificação robusta antes de inicializar
+if (firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.apiKey !== "undefined") {
+    try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
         isFirebaseInitialized = true;
-        console.log("Sistema conectado à nuvem.");
-    } else {
-        // Silencioso em produção para não assustar o usuário
-        console.warn("Modo Offline ativado: Chaves do Firebase não detectadas.");
+        console.log("🔥 Firebase inicializado com sucesso.");
+    } catch (error) {
+        console.error("Erro fatal ao inicializar Firebase:", error);
     }
-} catch (error) {
-    console.error("Falha silenciosa na conexão com DB:", error);
-    db = null;
+} else {
+    console.warn("⚠️ Firebase não configurado. O aplicativo funcionará apenas em modo de visualização (sem salvar dados).");
+    console.log("Configuração atual:", firebaseConfig);
 }
 
 export { db, isFirebaseInitialized };

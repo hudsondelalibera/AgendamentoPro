@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Appointment } from '../types';
 import { subscribeToAppointments, cancelAppointment, clearAllAppointments } from '../services/storageService';
-import { Trash2, BarChart2, RefreshCw, ShieldAlert, Download, Eraser, Smartphone, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, HardDrive } from 'lucide-react';
-import { db } from '../services/firebaseConfig';
+import { Trash2, BarChart2, RefreshCw, ShieldAlert, Download, Eraser, Smartphone, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Cloud, CloudOff } from 'lucide-react';
+import { isFirebaseInitialized } from '../services/firebaseConfig';
 
 export const AdminDashboard: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -53,7 +53,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleShareLink = () => {
-    const url = window.location.href; // Pega a URL atual automaticamente
+    const url = window.location.href; 
     copyToClipboard(url, 'link');
   };
 
@@ -63,7 +63,6 @@ export const AdminDashboard: React.FC = () => {
     copyToClipboard(message, 'invite');
   };
 
-  // Hardcoded slots for robustness in chart calculation
   const DEFAULT_SLOTS = [
     "08:00", "09:00", "10:00", "11:00", "12:00", 
     "13:00", "14:00", "15:00", "16:00", "17:00", 
@@ -105,7 +104,6 @@ export const AdminDashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    // Inscreve no Firestore para atualizações em tempo real (Big Data)
     const unsubscribe = subscribeToAppointments((data) => {
       const sortedData = [...data].sort((a, b) => {
           if (a.date !== b.date) return a.date.localeCompare(b.date);
@@ -117,24 +115,18 @@ export const AdminDashboard: React.FC = () => {
       setIsLoading(false);
     });
 
-    // Cleanup na desmontagem
     return () => unsubscribe();
   }, []);
 
   const handleCancel = async (id: string) => {
     if (window.confirm("Tem certeza que deseja cancelar este agendamento?")) {
       await cancelAppointment(id);
-      // Força atualização local se não tiver realtime do Firebase
-      if (!db) {
-          window.location.reload(); 
-      }
     }
   };
 
   const handleClearAll = async () => {
-    if (window.confirm("PERIGO: Isso apagará TODOS os agendamentos. Deseja continuar?")) {
+    if (window.confirm("PERIGO: Isso apagará TODOS os agendamentos do banco de dados na nuvem. Deseja continuar?")) {
       await clearAllAppointments();
-      if (!db) window.location.reload();
     }
   };
 
@@ -264,14 +256,25 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       
-      {!db && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center gap-3 text-amber-800 animate-fade-in">
-              <HardDrive className="w-5 h-5 text-amber-600" />
+      {!isFirebaseInitialized && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-red-800 animate-fade-in">
+              <CloudOff className="w-6 h-6 text-red-600" />
               <div>
-                  <p className="font-bold text-sm">Modo de Armazenamento Local</p>
-                  <p className="text-xs">O banco de dados na nuvem não está conectado. Os dados estão salvos apenas neste navegador/dispositivo.</p>
+                  <p className="font-bold text-sm">Banco de Dados Desconectado</p>
+                  <p className="text-xs">
+                    O sistema não está salvando dados na nuvem. Verifique a configuração das chaves do Firebase (VITE_FIREBASE_...).
+                  </p>
               </div>
           </div>
+      )}
+
+      {isFirebaseInitialized && (
+         <div className="flex justify-end">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                <Cloud className="w-3 h-3" />
+                Conectado à Nuvem
+            </span>
+         </div>
       )}
 
       {/* Share Section */}
@@ -317,12 +320,6 @@ export const AdminDashboard: React.FC = () => {
             <div className="text-xs text-gray-400 flex items-center gap-2 mt-1">
                 <Clock className="w-3 h-3" />
                 {isLoading ? 'Sincronizando...' : `Atualizado: ${new Date(lastUpdated).toLocaleTimeString()}`}
-                {!isLoading && (
-                    <span className="flex h-2 w-2 relative">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                    </span>
-                )}
             </div>
           </div>
 
@@ -344,7 +341,7 @@ export const AdminDashboard: React.FC = () => {
                 <BarChart2 className="w-6 h-6 text-indigo-600" />
                 <div>
                     <h2 className="text-xl font-bold text-gray-900">Ocupação Diária</h2>
-                    <p className="text-xs text-gray-500">Dados em Tempo Real</p>
+                    <p className="text-xs text-gray-500">Dados da Nuvem</p>
                 </div>
             </div>
             <div className="text-sm font-medium bg-gray-100 px-3 py-1 rounded-full text-gray-600">

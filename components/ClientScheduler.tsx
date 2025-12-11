@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Appointment, TIME_SLOTS, DaySlot } from '../types';
 import { checkAvailability, saveAppointment, getAppointments } from '../services/storageService';
 import { generateConfirmationMessage } from '../services/geminiService';
-import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, X, ChevronRight, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, X, ChevronRight, AlertCircle, CloudOff } from 'lucide-react';
+import { isFirebaseInitialized } from '../services/firebaseConfig';
 
 interface ClientSchedulerProps {
   onBookingComplete: () => void;
@@ -59,18 +60,39 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         }
 
         // 2. Fetch occupied slots from Cloud
-        try {
-            const cloudAppointments = await getAppointments();
-            setFetchedAppointments(cloudAppointments);
-        } catch (e) {
-            console.error("Failed to fetch availability", e);
-            // Non-blocking error
-        } finally {
+        if (isFirebaseInitialized) {
+            try {
+                const cloudAppointments = await getAppointments();
+                setFetchedAppointments(cloudAppointments);
+            } catch (e) {
+                console.error("Failed to fetch availability", e);
+            } finally {
+                setIsLoadingAvailability(false);
+            }
+        } else {
             setIsLoadingAvailability(false);
         }
     };
     init();
   }, []);
+
+  // --- SE O BANCO NÃO ESTIVER CONECTADO, BLOQUEIA A TELA ---
+  if (!isFirebaseInitialized) {
+      return (
+          <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl p-12 text-center border border-red-100">
+              <div className="bg-red-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <CloudOff className="w-10 h-10 text-red-500" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Sistema Indisponível</h3>
+              <p className="text-gray-500 max-w-md mx-auto mb-6">
+                  Não foi possível conectar ao banco de dados de agendamentos. Por favor, entre em contato com o administrador para verificar a configuração.
+              </p>
+              <div className="inline-block bg-gray-100 px-4 py-2 rounded text-xs text-gray-600 font-mono">
+                  Erro: Chaves do Firebase não configuradas (VITE_FIREBASE_API_KEY)
+              </div>
+          </div>
+      );
+  }
   
   const handleTimeSelect = (time: string) => {
     // Check locally against fetched data first

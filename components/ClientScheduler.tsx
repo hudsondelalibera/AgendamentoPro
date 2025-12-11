@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Appointment, TIME_SLOTS, DaySlot } from '../types';
 import { saveAppointment, getAppointments } from '../services/storageService';
 import { generateConfirmationMessage } from '../services/geminiService';
@@ -23,6 +23,9 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(true);
   const [days, setDays] = useState<DaySlot[]>([]);
 
+  // Ref para rolagem automática no mobile
+  const timeSectionRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const init = async () => {
         const nextDays: DaySlot[] = [];
@@ -30,7 +33,8 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         let daysAdded = 0;
         let dayOffset = 0;
         
-        while (daysAdded < 14) { // Mostrando 2 semanas
+        // Alterado de 14 para 7 dias (Hoje + 6 dias)
+        while (daysAdded < 7) { 
             const date = new Date(today);
             date.setDate(today.getDate() + dayOffset);
             
@@ -82,6 +86,21 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
           </div>
       );
   }
+
+  const handleDateSelect = (dateString: string) => {
+    setSelectedDate(dateString);
+    setSelectedTime(null);
+    
+    // UX Mobile: Rola suavemente para a seção de horários
+    if (window.innerWidth < 768 && timeSectionRef.current) {
+        setTimeout(() => {
+            timeSectionRef.current?.scrollIntoView({ 
+                behavior: 'smooth',
+                block: 'start'
+            });
+        }, 100);
+    }
+  };
 
   const handleTimeSelect = (time: string) => {
     if (selectedDate && isTimeSlotValid(selectedDate, time)) {
@@ -215,10 +234,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                             {days.map((day) => (
                             <button
                                 key={day.dateString}
-                                onClick={() => {
-                                setSelectedDate(day.dateString);
-                                setSelectedTime(null);
-                                }}
+                                onClick={() => handleDateSelect(day.dateString)}
                                 className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all duration-200 ${
                                 selectedDate === day.dateString
                                     ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg scale-[1.02]'
@@ -241,7 +257,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                     </div>
 
                     {/* Right: Time */}
-                    <div className="w-full md:w-[65%] p-6 md:p-8 flex flex-col">
+                    <div ref={timeSectionRef} className="w-full md:w-[65%] p-6 md:p-8 flex flex-col">
                         {isLoadingAvailability ? (
                             <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
                                 <Loader2 className="w-10 h-10 animate-spin mb-4 text-indigo-500" />

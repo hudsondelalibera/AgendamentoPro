@@ -80,7 +80,7 @@ function App() {
                   <h2 className="text-xl font-bold text-gray-900">Acesso Restrito</h2>
                   <p className="text-sm text-gray-500">Apenas para administradores</p>
                 </div>
-                <form onSubmit={handleAdminLogin} className="space-y-4">
+                <form onSubmit={handleSubmitLogin} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
                     <input
@@ -107,12 +107,24 @@ function App() {
       </main>
 
       <footer className="bg-white border-t border-gray-200 mt-auto">
-        <div className="max-w-6xl mx-auto px-4 py-6 text-center text-sm text-gray-500">
-          &copy; {new Date().getFullYear()} AgendamentoPro. Todos os direitos reservados.
+        <div className="max-w-6xl mx-auto px-4 py-6 text-center text-sm text-gray-500 flex justify-between items-center">
+          <span>&copy; {new Date().getFullYear()} AgendamentoPro. Todos os direitos reservados.</span>
+          <span className="text-gray-400 text-xs">v1.0.3</span>
         </div>
       </footer>
     </div>
   );
+  
+  function handleSubmitLogin(e: React.FormEvent) {
+      e.preventDefault();
+      // Hardcoded password for demo purposes
+      if (passwordInput === 'admin123') {
+        setIsAdminAuthenticated(true);
+        setPasswordInput('');
+      } else {
+        alert('Senha incorreta (Dica: admin123)');
+      }
+  }
 }
 
 export default App;

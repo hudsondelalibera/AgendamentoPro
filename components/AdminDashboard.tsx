@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Appointment } from '../types';
 import { subscribeToAppointments, cancelAppointment, clearAllAppointments } from '../services/storageService';
-import { Trash2, BarChart2, RefreshCw, ShieldAlert, Download, Eraser, Smartphone, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, CloudOff } from 'lucide-react';
+import { Trash2, BarChart2, RefreshCw, ShieldAlert, Download, Eraser, Smartphone, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, HardDrive } from 'lucide-react';
 import { db } from '../services/firebaseConfig';
 
 export const AdminDashboard: React.FC = () => {
@@ -53,12 +53,12 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleShareLink = () => {
-    const url = 'https://agendamento-pro-tau.vercel.app/';
+    const url = window.location.href; // Pega a URL atual automaticamente
     copyToClipboard(url, 'link');
   };
 
   const handleShareInvite = () => {
-    const url = 'https://agendamento-pro-tau.vercel.app/';
+    const url = window.location.href;
     const message = `Olá! 👋\n\nAgende seu horário conosco de forma prática e rápida através do nosso link:\n${url}\n\nEsperamos por você!`;
     copyToClipboard(message, 'invite');
   };
@@ -122,15 +122,19 @@ export const AdminDashboard: React.FC = () => {
   }, []);
 
   const handleCancel = async (id: string) => {
-    if (window.confirm("Tem certeza que deseja cancelar este agendamento? Esta ação será sincronizada na nuvem.")) {
+    if (window.confirm("Tem certeza que deseja cancelar este agendamento?")) {
       await cancelAppointment(id);
-      // Não precisa chamar loadData(), o listener 'subscribe' atualiza automaticamente
+      // Força atualização local se não tiver realtime do Firebase
+      if (!db) {
+          window.location.reload(); 
+      }
     }
   };
 
   const handleClearAll = async () => {
-    if (window.confirm("PERIGO: Isso apagará TODOS os agendamentos do BANCO DE DADOS NA NUVEM. Deseja continuar?")) {
+    if (window.confirm("PERIGO: Isso apagará TODOS os agendamentos. Deseja continuar?")) {
       await clearAllAppointments();
+      if (!db) window.location.reload();
     }
   };
 
@@ -155,7 +159,7 @@ export const AdminDashboard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `base_agendamentos_cloud_${formatDateKey(new Date())}.csv`);
+    link.setAttribute('download', `agendamentos_${formatDateKey(new Date())}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -257,30 +261,19 @@ export const AdminDashboard: React.FC = () => {
 
   const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-  if (!db) {
-      return (
-          <div className="max-w-4xl mx-auto p-8 text-center bg-white rounded-xl shadow-lg mt-10">
-              <CloudOff className="w-16 h-16 text-red-500 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-800">Banco de Dados não Configurado</h2>
-              <p className="text-gray-600 mt-2 mb-6">
-                  Para usar a persistência na nuvem (Big Data), você precisa configurar o projeto do Firebase no Vercel.
-              </p>
-              <div className="bg-gray-100 p-4 rounded text-left text-sm font-mono overflow-x-auto">
-                  <p className="font-bold mb-2 text-gray-700">Adicione estas variáveis no Vercel:</p>
-                  VITE_FIREBASE_API_KEY=...<br/>
-                  VITE_FIREBASE_AUTH_DOMAIN=...<br/>
-                  VITE_FIREBASE_PROJECT_ID=...<br/>
-                  VITE_FIREBASE_STORAGE_BUCKET=...<br/>
-                  VITE_FIREBASE_MESSAGING_SENDER_ID=...<br/>
-                  VITE_FIREBASE_APP_ID=...
-              </div>
-          </div>
-      )
-  }
-
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       
+      {!db && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center gap-3 text-amber-800 animate-fade-in">
+              <HardDrive className="w-5 h-5 text-amber-600" />
+              <div>
+                  <p className="font-bold text-sm">Modo de Armazenamento Local</p>
+                  <p className="text-xs">O banco de dados na nuvem não está conectado. Os dados estão salvos apenas neste navegador/dispositivo.</p>
+              </div>
+          </div>
+      )}
+
       {/* Share Section */}
       <div className="bg-gradient-to-r from-indigo-700 to-indigo-900 rounded-xl shadow-lg p-6 text-white flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-start gap-4">
@@ -323,7 +316,7 @@ export const AdminDashboard: React.FC = () => {
             </h2>
             <div className="text-xs text-gray-400 flex items-center gap-2 mt-1">
                 <Clock className="w-3 h-3" />
-                {isLoading ? 'Sincronizando com a nuvem...' : `Atualizado: ${new Date(lastUpdated).toLocaleTimeString()}`}
+                {isLoading ? 'Sincronizando...' : `Atualizado: ${new Date(lastUpdated).toLocaleTimeString()}`}
                 {!isLoading && (
                     <span className="flex h-2 w-2 relative">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -339,7 +332,7 @@ export const AdminDashboard: React.FC = () => {
                 className="text-xs text-red-600 bg-red-50 hover:bg-red-100 flex items-center gap-1 px-4 py-2 rounded-lg border border-red-200 transition-colors font-medium"
             >
                 <Eraser className="w-4 h-4" />
-                Limpar Base na Nuvem
+                Limpar Todos os Dados
             </button>
           </div>
       </div>
@@ -463,7 +456,7 @@ export const AdminDashboard: React.FC = () => {
       <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
         <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center bg-gray-50 gap-4">
           <div className="flex items-center gap-3">
-             <h3 className="text-md font-bold text-gray-700">Todos os Registros (Cloud)</h3>
+             <h3 className="text-md font-bold text-gray-700">Todos os Registros</h3>
           </div>
           <button 
                 onClick={downloadXLS}
@@ -478,7 +471,7 @@ export const AdminDashboard: React.FC = () => {
         <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
           {appointments.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">
-               <p>Nenhum agendamento encontrado no banco de dados.</p>
+               <p>Nenhum agendamento encontrado.</p>
             </div>
           ) : (
             <table className="w-full text-left border-collapse">

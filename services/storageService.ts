@@ -12,119 +12,126 @@ import {
 } from 'firebase/firestore';
 
 const COLLECTION_NAME = 'appointments';
+const LOCAL_STORAGE_KEY = 'agendamento_pro_local_db';
 
-// --- MÉTODOS ASSÍNCRONOS (FIREBASE) ---
+// --- HELPERS PARA MODO OFFLINE (LOCAL STORAGE) ---
+const getLocalData = (): Appointment[] => {
+  try {
+    const data = localStorage.getItem(LOCAL_STORAGE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) { return []; }
+};
 
-/**
- * Busca todos os agendamentos do banco de dados na nuvem.
- */
+const saveLocalData = (data: Appointment[]) => {
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+};
+
+// --- MÉTODOS HÍBRIDOS (FIREBASE + LOCAL STORAGE) ---
+
 export const getAppointments = async (): Promise<Appointment[]> => {
-  if (!db) return []; // Fallback se não tiver config
-  
-  try {
-    const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
-    const appointments: Appointment[] = [];
-    querySnapshot.forEach((doc) => {
-      appointments.push({ id: doc.id, ...doc.data() } as Appointment);
-    });
-    return appointments;
-  } catch (error) {
-    console.error("Erro ao buscar agendamentos:", error);
-    return [];
-  }
-};
-
-/**
- * Inscreve-se para atualizações em tempo real (para o Painel Admin).
- */
-export const subscribeToAppointments = (callback: (data: Appointment[]) => void) => {
-  if (!db) return () => {};
-
-  const q = query(collection(db, COLLECTION_NAME));
-  const unsubscribe = onSnapshot(q, (querySnapshot) => {
-    const appointments: Appointment[] = [];
-    querySnapshot.forEach((doc) => {
-      appointments.push({ id: doc.id, ...doc.data() } as Appointment);
-    });
-    callback(appointments);
-  });
-  
-  return unsubscribe;
-};
-
-/**
- * Salva um novo agendamento no banco de dados.
- * Retorna true se sucesso, false se falha (ou horário ocupado).
- */
-export const saveAppointment = async (appointment: Appointment): Promise<boolean> => {
-  if (!db) {
-    alert("Erro de configuração: Banco de dados não conectado.");
-    return false;
-  }
-
-  try {
-    // Verificar conflito de horário no servidor antes de salvar
-    const q = query(
-      collection(db, COLLECTION_NAME), 
-      where("date", "==", appointment.date),
-      where("time", "==", appointment.time)
-    );
-    
-    const querySnapshot = await getDocs(q);
-    
-    if (!querySnapshot.empty) {
-      return false; // Horário já ocupado
+  // Modo Firebase
+  if (db) {
+    try {
+      const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
+      const appointments: Appointment[] = [];
+      querySnapshot.forEach((doc) => {
+        appointments.push({ id: doc.id, ...doc.data() } as Appointment);
+      });
+      return appointments;
+    } catch (error) {
+      console.error("Erro no Firebase, tentando local:", error);
     }
-
-    // Salvar
-    // Removemos o ID gerado manualmente pois o Firebase gera um ID único
-    const { id, ...dataToSave } = appointment; 
-    await addDoc(collection(db, COLLECTION_NAME), dataToSave);
-    return true;
-
-  } catch (error) {
-    console.error("Erro ao salvar agendamento:", error);
-    return false;
   }
+
+  // Modo Local (Fallback)
+  return getLocalData();
 };
 
-/**
- * Cancela (deleta) um agendamento do banco de dados.
- */
-export const cancelAppointment = async (id: string): Promise<void> => {
-  if (!db) return;
-  try {
-    await deleteDoc(doc(db, COLLECTION_NAME, id));
-  } catch (error) {
-    console.error("Erro ao cancelar agendamento:", error);
+export const subscribeToAppointments = (callback: (data: Appointment[]) => void) => {
+  // Modo Firebase
+  if (db) {
+    try {
+        const q = query(collection(db, COLLECTION_NAME));
+        return onSnapshot(q, (querySnapshot) => {
+            const appointments: Appointment[] = [];
+            querySnapshot.forEach((doc) => {
+            appointments.push({ id: doc.id, ...doc.data() } as Appointment);
+            });
+            callback(appointments);
+        });
+    } catch (e) {
+        console.error("Erro ao assinar Firebase", e);
+    }
   }
+
+  // Modo Local (Simula realtime chamando uma vez)
+  const data = getLocalData();
+  callback(data);
+  return () => {};
 };
 
-/**
- * Limpa toda a base de dados (Cuidado!)
- */
-export const clearAllAppointments = async (): Promise<void> => {
-  if (!db) return;
-  const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
-  querySnapshot.forEach(async (docData) => {
-    await deleteDoc(doc(db, COLLECTION_NAME, docData.id));
-  });
-};
-
-/**
- * Verifica disponibilidade buscando no banco.
- * Nota: É melhor buscar todos os dados de uma vez na UI para performance, 
- * mas mantemos essa função utilitária assíncrona.
- */
-export const checkAvailability = async (date: string, time: string): Promise<boolean> => {
-  if (!db) return true;
+export const saveAppointment = async (appointment: Appointment): Promise<boolean> => {
+  // Verificação de conflito de horário (Local e Remoto)
+  const currentApps = await getAppointments();
+  const isTaken = currentApps.some(a => a.date === appointment.date && a.time === appointment.time);
   
-  const q = query(
-      collection(db, COLLECTION_NAME), 
-      where("date", "==", date),
-      where("time", "==", time)
-    );
-    
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.empty;
+  if (isTaken) return false;
+
+  // Modo Firebase
+  if (db) {
+    try {
+      const { id, ...dataToSave } = appointment; 
+      await addDoc(collection(db, COLLECTION_NAME), dataToSave);
+      return true;
+    } catch (error) {
+      console.error("Erro ao salvar no Firebase:", error);
+      // Se falhar no Firebase, salva localmente como backup? 
+      // Por enquanto, vamos assumir que se tem DB, deve salvar no DB.
+      // Mas para garantir a experiência do usuário se o DB cair:
+    }
+  }
+
+  // Modo Local (Fallback ou se não tiver DB)
+  const localApps = getLocalData();
+  // Gera um ID falso
+  const newApp = { ...appointment, id: `local_${Date.now()}` };
+  localApps.push(newApp);
+  saveLocalData(localApps);
+  return true;
+};
+
+export const cancelAppointment = async (id: string): Promise<void> => {
+  // Modo Firebase
+  if (db && !id.startsWith('local_')) {
+    try {
+      await deleteDoc(doc(db, COLLECTION_NAME, id));
+      return;
+    } catch (error) {
+      console.error("Erro ao deletar no Firebase:", error);
+    }
+  }
+
+  // Modo Local
+  const localApps = getLocalData();
+  const filtered = localApps.filter(a => a.id !== id);
+  saveLocalData(filtered);
+  
+  // Se for híbrido, pode ser necessário forçar uma atualização da UI
+  // Mas o subscribe ou o refresh da página cuidam disso
+};
+
+export const clearAllAppointments = async (): Promise<void> => {
+  if (db) {
+    const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
+    querySnapshot.forEach(async (docData) => {
+      await deleteDoc(doc(db, COLLECTION_NAME, docData.id));
+    });
+  }
+  
+  localStorage.removeItem(LOCAL_STORAGE_KEY);
+};
+
+export const checkAvailability = async (date: string, time: string): Promise<boolean> => {
+   const apps = await getAppointments();
+   return !apps.some(a => a.date === date && a.time === time);
 };

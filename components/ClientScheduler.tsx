@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Appointment, TIME_SLOTS, DaySlot } from '../types';
 import { checkAvailability, saveAppointment, getAppointments } from '../services/storageService';
 import { generateConfirmationMessage } from '../services/geminiService';
-import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, X, ChevronRight } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, X, ChevronRight, AlertCircle } from 'lucide-react';
 
 interface ClientSchedulerProps {
   onBookingComplete: () => void;
@@ -16,7 +16,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<1 | 2>(1); // 1: Date/Time, 2: Info
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [generatedMessage, setGeneratedMessage] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   // State to hold fetched appointments for availability check
   const [fetchedAppointments, setFetchedAppointments] = useState<Appointment[]>([]);
@@ -37,7 +37,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
             const date = new Date(today);
             date.setDate(today.getDate() + dayOffset);
             
-            if (date.getDay() !== 0) {
+            if (date.getDay() !== 0) { // Skip Sundays if needed
                 const year = date.getFullYear();
                 const month = String(date.getMonth() + 1).padStart(2, '0');
                 const day = String(date.getDate()).padStart(2, '0');
@@ -64,6 +64,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
             setFetchedAppointments(cloudAppointments);
         } catch (e) {
             console.error("Failed to fetch availability", e);
+            // Non-blocking error
         } finally {
             setIsLoadingAvailability(false);
         }
@@ -75,6 +76,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     // Check locally against fetched data first
     if (selectedDate && isTimeSlotValid(selectedDate, time)) {
       setSelectedTime(time);
+      setErrorMsg(null);
     }
   };
 
@@ -109,8 +111,8 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     setClientName('');
     setClientWhatsapp('');
     setSelectedTime(null);
-    setGeneratedMessage('');
     setShowSuccessModal(false);
+    setErrorMsg(null);
     // Refresh availability
     getAppointments().then(setFetchedAppointments);
   };
@@ -124,19 +126,15 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     if (!selectedDate || !selectedTime || !clientName || !clientWhatsapp) return;
 
     setIsSubmitting(true);
+    setErrorMsg(null);
 
     try {
       // 1. Generate AI confirmation text
       let message = await generateConfirmationMessage(clientName, selectedDate, selectedTime);
-      if (!message) {
-        message = `Olá ${clientName}, confirmamos seu agendamento para ${selectedDate} às ${selectedTime}.`;
-      }
-      setGeneratedMessage(message);
-
+      
       // 2. Create Appointment Object
-      // Firebase will generate the ID automatically
       const newAppointment: Appointment = {
-        id: '', // Placeholder, will be ignored by saveAppointment logic for Firestore
+        id: '', // Placeholder
         date: selectedDate,
         time: selectedTime,
         clientName,
@@ -145,14 +143,14 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         createdAt: Date.now()
       };
 
-      // 3. Save to Cloud (Firebase)
+      // 3. Save to Cloud (Firebase) or Local
       const success = await saveAppointment(newAppointment);
 
       if (success) {
         setShowSuccessModal(true);
         onBookingComplete();
       } else {
-        alert("Desculpe, este horário acabou de ser ocupado por outro cliente. Por favor, escolha outro.");
+        setErrorMsg("Este horário acabou de ser ocupado. Por favor, escolha outro.");
         // Refresh data to show blocked slot
         const freshData = await getAppointments();
         setFetchedAppointments(freshData);
@@ -161,7 +159,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
       }
     } catch (error) {
       console.error(error);
-      alert("Ocorreu um erro ao agendar. Verifique sua conexão e tente novamente.");
+      setErrorMsg("Ocorreu um erro técnico. Tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -212,6 +210,13 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
 
         {/* Right Content: Time & Form */}
         <div className="w-full md:w-[65%] p-6 md:p-10 flex flex-col">
+          {errorMsg && (
+              <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2 animate-pulse">
+                  <AlertCircle className="w-4 h-4" />
+                  {errorMsg}
+              </div>
+          )}
+          
           {isLoadingAvailability ? (
               <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
                   <Loader2 className="w-10 h-10 animate-spin mb-4 text-indigo-500" />
@@ -387,7 +392,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
             <h2 className="text-2xl font-bold text-gray-900 mb-3">Tudo Certo!</h2>
             
             <p className="text-gray-500 leading-relaxed mb-8">
-              Seu horário foi reservado com sucesso e salvo em nossa nuvem segura.
+              Seu horário foi reservado com sucesso.
               <br/>
               <span className="text-sm font-medium text-indigo-600 mt-2 block">Te esperamos lá!</span>
             </p>

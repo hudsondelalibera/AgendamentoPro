@@ -1,11 +1,11 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, Firestore } from 'firebase/firestore';
 
-// Função segura para acessar variáveis de ambiente
-const getEnv = (key: string) => {
+// Função segura para acessar variáveis de ambiente sem quebrar o build
+const getEnv = (key: string): string => {
   try {
     // @ts-ignore
-    return import.meta.env[key];
+    return import.meta.env[key] || '';
   } catch (e) {
     return '';
   }
@@ -20,20 +20,23 @@ const firebaseConfig = {
   appId: getEnv('VITE_FIREBASE_APP_ID')
 };
 
-let db: any = null;
+let db: Firestore | null = null;
+let isFirebaseInitialized = false;
 
 try {
-    // Só tenta inicializar se tiver pelo menos a API Key
-    if (firebaseConfig.apiKey) {
+    // Validação mínima para tentar conectar: precisa de API Key e Project ID
+    if (firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.apiKey.length > 5) {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
-        console.log("Firebase conectado com sucesso.");
+        isFirebaseInitialized = true;
+        console.log("Sistema conectado à nuvem.");
     } else {
-        console.warn("Firebase não configurado (Faltam chaves no .env). Entrando em modo Offline/Local.");
+        // Silencioso em produção para não assustar o usuário
+        console.warn("Modo Offline ativado: Chaves do Firebase não detectadas.");
     }
 } catch (error) {
-    console.error("Erro ao inicializar Firebase:", error);
-    console.warn("Entrando em modo Offline/Local.");
+    console.error("Falha silenciosa na conexão com DB:", error);
+    db = null;
 }
 
-export { db };
+export { db, isFirebaseInitialized };

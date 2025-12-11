@@ -1,8 +1,8 @@
 // Este serviço gera os links para a API universal do WhatsApp (Click-to-Chat)
 // Isso permite que o cliente envie a mensagem sem necessidade de servidores complexos.
 
-// Seu número de WhatsApp Business
-const CLINIC_WHATSAPP = '5544991685916';
+// Seu número de WhatsApp Business registrado na Z-API
+const CLINIC_WHATSAPP = '5544991797693';
 
 export const getClinicWhatsappUrl = (clientName: string, date: string, time: string) => {
   // Converte data YYYY-MM-DD para DD/MM/YYYY

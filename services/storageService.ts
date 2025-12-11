@@ -63,9 +63,6 @@ export const saveAppointment = async (appointment: Appointment): Promise<boolean
   }
 
   try {
-    // Verificação de conflito de horário diretamente no banco
-    // Nota: Em produção real, idealmente faríamos isso com uma Cloud Function ou Transaction para garantir atomicidade.
-    // Aqui faremos uma checagem "optimistic" buscando os dados atuais.
     const currentApps = await getAppointments();
     const isTaken = currentApps.some(a => a.date === appointment.date && a.time === appointment.time);
     
@@ -80,14 +77,26 @@ export const saveAppointment = async (appointment: Appointment): Promise<boolean
   }
 };
 
-export const cancelAppointment = async (id: string): Promise<void> => {
-  if (!db) return;
+export const cancelAppointment = async (id: string): Promise<boolean> => {
+  if (!db) {
+      console.error("Erro: Banco de dados desconectado durante tentativa de cancelamento.");
+      return false;
+  }
+
+  if (!id) {
+      console.error("Tentativa de cancelar agendamento sem ID válido.");
+      return false;
+  }
+
+  console.log(`[Firebase] Excluindo documento ID: ${id}`);
 
   try {
     await deleteDoc(doc(db, COLLECTION_NAME, id));
+    console.log(`[Firebase] Documento ${id} excluído com sucesso.`);
+    return true;
   } catch (error) {
-    console.error("Erro ao cancelar agendamento:", error);
-    throw error;
+    console.error(`Erro ao cancelar agendamento ${id} no Firebase:`, error);
+    return false;
   }
 };
 

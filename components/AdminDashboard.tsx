@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Appointment } from '../types';
 import { subscribeToAppointments, cancelAppointment, clearAllAppointments } from '../services/storageService';
-import { Trash2, BarChart2, Download, Eraser, Smartphone, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CloudOff, Filter, X } from 'lucide-react';
+import { Trash2, BarChart2, Download, Eraser, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CloudOff, Filter, X, Smartphone } from 'lucide-react';
 import { isFirebaseInitialized } from '../services/firebaseConfig';
 
 export const AdminDashboard: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [occupancyData, setOccupancyData] = useState<{date: string, count: number, rate: number}[]>([]);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [copiedInvite, setCopiedInvite] = useState(false);
   const [selectedDateFilter, setSelectedDateFilter] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
@@ -26,24 +26,11 @@ export const AdminDashboard: React.FC = () => {
     return `${year}-${month}-${day}`;
   };
 
-  const openWhatsapp = (message: string, number: string) => {
-    const cleanNumber = number.replace(/\D/g, '');
-    if (!cleanNumber) return;
-    const encodedMessage = encodeURIComponent(message || `Olá, confirmamos seu agendamento.`);
-    const url = `https://wa.me/${cleanNumber}?text=${encodedMessage}`;
-    window.open(url, '_blank');
-  };
-
-  const copyToClipboard = async (text: string, type: 'link' | 'invite') => {
+  const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      if (type === 'link') {
-        setCopiedLink(true);
-        setTimeout(() => setCopiedLink(false), 2000);
-      } else {
-        setCopiedInvite(true);
-        setTimeout(() => setCopiedInvite(false), 2000);
-      }
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
     } catch (err) {
       console.error('Failed to copy', err);
     }
@@ -51,13 +38,14 @@ export const AdminDashboard: React.FC = () => {
 
   const handleShareLink = () => {
     const url = window.location.href; 
-    copyToClipboard(url, 'link');
+    copyToClipboard(url);
   };
 
-  const handleShareInvite = () => {
-    const url = window.location.href;
-    const message = `Olá! 👋\n\nAgende seu horário conosco de forma prática e rápida pelo nosso App:\n${url}\n\nEscolha o melhor horário para você. Esperamos sua visita!`;
-    copyToClipboard(message, 'invite');
+  const openWhatsapp = (phone: string) => {
+      const cleanNumber = phone.replace(/\D/g, '');
+      if (!cleanNumber) return;
+      const url = `https://wa.me/55${cleanNumber}`;
+      window.open(url, '_blank');
   };
 
   const processOccupancy = (data: Appointment[]) => {
@@ -97,12 +85,34 @@ export const AdminDashboard: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  const handleCancel = async (apt: Appointment) => {
+  const handleCancel = async (e: React.MouseEvent, apt: Appointment) => {
+    // 1. Pára a propagação para evitar cliques no card pai (se houver)
+    e.stopPropagation();
+    e.preventDefault();
+
+    // 2. Bloqueio simples para evitar duplo clique
+    if (isDeleting === apt.id) return;
+
+    console.log("Tentando cancelar agendamento ID:", apt.id);
+
     const dateFormatted = apt.date.split('-').reverse().join('/');
-    const confirmMessage = `CONFIRMAÇÃO DE CANCELAMENTO:\n\nCliente: ${apt.clientName}\nData: ${dateFormatted}\nHorário: ${apt.time}\n\nAo confirmar, este horário ficará livre imediatamente para novos agendamentos.`;
+    const confirmMessage = `Tem certeza que deseja apagar este agendamento?\n\nCliente: ${apt.clientName}\nDia: ${dateFormatted} às ${apt.time}`;
     
     if (window.confirm(confirmMessage)) {
-      await cancelAppointment(apt.id);
+      setIsDeleting(apt.id);
+      try {
+        const success = await cancelAppointment(apt.id);
+        if (success) {
+            console.log("Agendamento excluído com sucesso.");
+        } else {
+            alert("Não foi possível excluir. Verifique sua conexão ou se o item já foi removido.");
+        }
+      } catch (error) {
+        console.error("Erro no handleCancel:", error);
+        alert("Erro técnico ao tentar cancelar.");
+      } finally {
+        setIsDeleting(null);
+      }
     }
   };
 
@@ -113,7 +123,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const downloadXLS = () => {
-    const headers = ['ID', 'Data', 'Hora', 'Cliente', 'WhatsApp'];
+    const headers = ['ID', 'Data', 'Hora', 'Cliente', 'Celular'];
     const csvRows = [headers.join(',')];
 
     appointments.forEach(apt => {
@@ -228,11 +238,8 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-          <button onClick={handleShareLink} className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-3 rounded-lg font-semibold transition-all">
-            {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} Link
-          </button>
-          <button onClick={handleShareInvite} className="flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-green-500/20">
-            {copiedInvite ? <Check className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />} Copiar Convite WhatsApp
+          <button onClick={handleShareLink} className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-3 rounded-lg font-semibold transition-all w-full md:w-auto">
+            {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} Copiar Link de Agendamento
           </button>
         </div>
       </div>
@@ -311,17 +318,23 @@ export const AdminDashboard: React.FC = () => {
                              </div>
                          </div>
                          <h4 className="font-bold text-gray-800 text-sm">{apt.clientName}</h4>
+                         <p className="text-xs text-gray-400 mb-1">{apt.clientWhatsapp}</p>
                          
-                         <div className="flex gap-2 mt-1">
-                            <button onClick={() => openWhatsapp(apt.confirmationMessage || '', apt.clientWhatsapp)} className="flex-1 text-xs flex items-center justify-center gap-1 text-green-700 bg-green-50 py-1.5 rounded hover:bg-green-100 transition-colors border border-green-100">
+                         <div className="mt-1 flex gap-2">
+                            <button 
+                                onClick={() => openWhatsapp(apt.clientWhatsapp)}
+                                className="flex-1 text-xs flex items-center justify-center gap-1 text-green-700 bg-green-50 py-2.5 rounded-lg hover:bg-green-100 border border-green-100 font-bold transition-all"
+                            >
                                 <Smartphone className="w-3 h-3" /> WhatsApp
                             </button>
                             <button 
-                                onClick={() => handleCancel(apt)} 
-                                className="flex-1 text-xs flex items-center justify-center gap-1 text-red-600 bg-red-50 py-1.5 rounded hover:bg-red-600 hover:text-white transition-all border border-red-100 font-medium"
+                                type="button"
+                                onClick={(e) => handleCancel(e, apt)} 
+                                disabled={isDeleting === apt.id}
+                                className={`flex-1 text-xs flex items-center justify-center gap-1 text-red-600 bg-red-50 py-2.5 rounded-lg hover:bg-red-600 hover:text-white transition-all border border-red-100 font-bold ${isDeleting === apt.id ? 'opacity-50 cursor-wait' : ''}`}
                                 title="Liberar horário e remover do banco de dados"
                             >
-                                <Trash2 className="w-3 h-3" /> Cancelar
+                                <Trash2 className="w-3 h-3" /> {isDeleting === apt.id ? '...' : 'Cancelar'}
                             </button>
                          </div>
                      </div>

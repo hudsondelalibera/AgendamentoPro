@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Appointment, TIME_SLOTS, DaySlot } from '../types';
 import { saveAppointment, getAppointments } from '../services/storageService';
-import { sendAutomaticConfirmation, getManualWhatsappLink } from '../services/whatsappService';
-import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, ChevronRight, AlertCircle, CloudOff, ArrowLeft, Send } from 'lucide-react';
+import { sendAutomaticConfirmation } from '../services/whatsappService';
+import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, ChevronRight, AlertCircle, CloudOff, ArrowLeft } from 'lucide-react';
 import { isFirebaseInitialized } from '../services/firebaseConfig';
 
 interface ClientSchedulerProps {
@@ -15,11 +15,9 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
   const [clientName, setClientName] = useState('');
   const [clientWhatsapp, setClientWhatsapp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
   const [step, setStep] = useState<0 | 1>(0); // 0: Date/Time, 1: Info Form
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [whatsappAutoSent, setWhatsappAutoSent] = useState(false); // Novo estado para controlar o fallback
   
   const [fetchedAppointments, setFetchedAppointments] = useState<Appointment[]>([]);
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(true);
@@ -35,7 +33,6 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         let daysAdded = 0;
         let dayOffset = 0;
         
-        // Alterado de 14 para 7 dias (Hoje + 6 dias)
         while (daysAdded < 7) { 
             const date = new Date(today);
             date.setDate(today.getDate() + dayOffset);
@@ -93,7 +90,6 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     setSelectedDate(dateString);
     setSelectedTime(null);
     
-    // UX Mobile: Rola suavemente para a seção de horários
     if (window.innerWidth < 768 && timeSectionRef.current) {
         setTimeout(() => {
             timeSectionRef.current?.scrollIntoView({ 
@@ -141,17 +137,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     setSelectedTime(null);
     setShowSuccessModal(false);
     setErrorMsg(null);
-    setWhatsappAutoSent(false);
     getAppointments().then(setFetchedAppointments);
-  };
-
-  const handleManualSend = () => {
-    if (!selectedDate || !selectedTime) return;
-    const dateFormatted = selectedDate.split('-').reverse().join('/');
-    const message = `Olá *${clientName}*! 👋\n\nSeu agendamento foi confirmado com sucesso!\n\n🗓️ *Data:* ${dateFormatted}\n⏰ *Horário:* ${selectedTime}\n\nO horário está reservado para você.`;
-    
-    // Abre o WhatsApp Web/App com a mensagem pronta
-    window.open(getManualWhatsappLink(clientWhatsapp, message), '_blank');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -159,7 +145,6 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     if (!selectedDate || !selectedTime || !clientName || !clientWhatsapp) return;
 
     setIsSubmitting(true);
-    setSendingWhatsapp(true); // Estado visual de "Enviando Whats..."
     setErrorMsg(null);
 
     try {
@@ -169,20 +154,17 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         time: selectedTime,
         clientName,
         clientWhatsapp,
-        confirmationMessage: '', // Será gerada automaticamente no envio
+        confirmationMessage: '', 
         createdAt: Date.now()
       };
 
-      // 1. Salvar no Banco de Dados
+      // Backend: Salvar no Banco de Dados
       const success = await saveAppointment(newAppointment);
 
       if (success) {
-        // 2. Disparar WhatsApp Automático (Gateway)
-        // Tentamos enviar, mas não travamos o fluxo se falhar
-        const sent = await sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime);
-        setWhatsappAutoSent(sent);
+        // Envio Automático para WhatsApp (Z-API)
+        await sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime);
         
-        setSendingWhatsapp(false);
         setShowSuccessModal(true);
         onBookingComplete();
       } else {
@@ -197,7 +179,6 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
       setErrorMsg("Ocorreu um erro técnico. Tente novamente.");
     } finally {
       setIsSubmitting(false);
-      setSendingWhatsapp(false);
     }
   };
 
@@ -233,7 +214,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                     }`}>
                         2
                     </div>
-                    <span className={`text-xs font-bold mt-2 ${step >= 1 ? 'text-indigo-600' : 'text-gray-400'}`}>Seus Dados</span>
+                    <span className={`text-xs font-bold mt-2 ${step >= 1 ? 'text-indigo-600' : 'text-gray-400'}`}>Confirmação</span>
                 </div>
             </div>
         </div>
@@ -349,10 +330,10 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                         <ArrowLeft className="w-4 h-4 mr-1" /> Alterar Horário
                     </button>
 
-                    <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">Finalizar Agendamento</h3>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">Seus Dados</h3>
                     
                     <div className="bg-indigo-50 rounded-2xl p-6 mb-8 border border-indigo-100 flex flex-col items-center justify-center text-center">
-                        <p className="text-xs text-indigo-500 font-bold uppercase tracking-wide mb-1">Data e Hora Escolhidas</p>
+                        <p className="text-xs text-indigo-500 font-bold uppercase tracking-wide mb-1">Agendando Para</p>
                         <p className="text-indigo-900 font-bold text-2xl">
                             {selectedDate && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}
                             <span className="mx-2 text-indigo-300">•</span>
@@ -378,13 +359,13 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                                 value={clientName}
                                 onChange={(e) => setClientName(e.target.value)}
                                 className="block w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none font-medium"
-                                placeholder="Como gostaria de ser chamado?"
+                                placeholder="Digite seu nome"
                             />
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-2">WhatsApp de Contato</label>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Celular para Contato</label>
                             <div className="relative group">
                             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                 <Smartphone className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
@@ -398,10 +379,9 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                                 setClientWhatsapp(val);
                                 }}
                                 className="block w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none font-medium"
-                                placeholder="(11) 99999-9999"
+                                placeholder="(DDD) 99999-9999"
                             />
                             </div>
-                            <p className="text-xs text-gray-400 mt-2 pl-1">Enviaremos a confirmação automática neste número.</p>
                         </div>
 
                         <button
@@ -421,7 +401,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                              : <CheckCircle className="w-6 h-6" />
                             }
                             {isSubmitting 
-                             ? (sendingWhatsapp ? 'Enviando WhatsApp...' : 'Agendando...') 
+                             ? 'Confirmando...' 
                              : 'Confirmar Agendamento'
                             }
                         </button>
@@ -430,54 +410,27 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
             )}
         </div>
 
-        {/* Success Modal - AUTOMATIC OR MANUAL MODE */}
+        {/* Success Modal */}
         {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className={`bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center relative animate-bounce-slow border-t-4 ${whatsappAutoSent ? 'border-green-500' : 'border-indigo-500'}`}>
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center relative animate-bounce-slow border-t-4 border-green-500">
             
-            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 relative ${whatsappAutoSent ? 'bg-green-50' : 'bg-indigo-50'}`}>
-              <CheckCircle className={`w-10 h-10 ${whatsappAutoSent ? 'text-green-500' : 'text-indigo-500'}`} />
-              <div className={`absolute -bottom-1 -right-1 rounded-full p-1.5 border-2 border-white ${whatsappAutoSent ? 'bg-green-500' : 'bg-indigo-500'}`}>
-                 <Smartphone className="w-3 h-3 text-white" />
-              </div>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 relative bg-green-50">
+              <CheckCircle className="w-10 h-10 text-green-500" />
             </div>
 
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Agendado com Sucesso!</h2>
             
-            {whatsappAutoSent ? (
-                <>
-                    <p className="text-gray-500 mb-6 text-sm">
-                        A confirmação foi enviada automaticamente para seu WhatsApp: <br/>
-                        <span className="font-bold text-gray-800">{clientWhatsapp}</span>
-                    </p>
-                    <div className="bg-green-50 text-green-700 text-xs p-3 rounded-lg mb-6 flex items-start gap-2 text-left">
-                        <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                        <p>O comprovante já está no seu celular. Te aguardamos no dia {selectedDate?.split('-').reverse().join('/')} às {selectedTime}.</p>
-                    </div>
-                </>
-            ) : (
-                <>
-                    <p className="text-gray-500 mb-4 text-sm">
-                        Seu horário está garantido! Porém, não conseguimos enviar o comprovante automático.
-                    </p>
-                    <button
-                        onClick={handleManualSend}
-                        className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl mb-4 transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-200"
-                    >
-                        <Send className="w-4 h-4" />
-                        Enviar Comprovante no WhatsApp
-                    </button>
-                    <div className="bg-indigo-50 text-indigo-700 text-xs p-3 rounded-lg mb-6 text-left">
-                        <p>Te aguardamos no dia {selectedDate?.split('-').reverse().join('/')} às {selectedTime}.</p>
-                    </div>
-                </>
-            )}
-
+            <p className="text-gray-500 mb-6 text-sm">
+                Seu horário está reservado.<br/>
+                Entraremos em contato caso necessário.
+            </p>
+            
             <button
                 onClick={resetForm}
-                className="w-full bg-gray-100 text-gray-600 font-bold py-3.5 px-4 rounded-xl hover:bg-gray-200 transition-all text-sm"
+                className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-black transition-all text-sm shadow-lg"
             >
-                Fechar e Novo Agendamento
+                Concluir
             </button>
           </div>
         </div>

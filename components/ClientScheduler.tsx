@@ -113,21 +113,45 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     }
   };
 
-  const isTimeSlotValid = (dateString: string, timeString: string) => {
-    const isTaken = fetchedAppointments.some(a => a.date === dateString && a.time === timeString);
-    if (isTaken) return false;
+  // Converte horário "HH:MM" para minutos absolutos (ex: "01:00" -> 60)
+  const timeToMinutes = (time: string) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
 
+  const isTimeSlotValid = (dateString: string, candidateTime: string) => {
+    // 1. Verificar se é passado
     const today = new Date();
     const selectedDateObj = new Date(dateString + 'T00:00:00');
     const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const selectedDateOnly = new Date(selectedDateObj.getFullYear(), selectedDateObj.getMonth(), selectedDateObj.getDate());
 
     if (selectedDateOnly.getTime() === todayDateOnly.getTime()) {
-      const currentHour = today.getHours();
-      const slotHour = parseInt(timeString.split(':')[0], 10);
-      return slotHour > currentHour;
+      const currentMinutes = today.getHours() * 60 + today.getMinutes();
+      const candidateMinutes = timeToMinutes(candidateTime);
+      if (candidateMinutes <= currentMinutes) return false;
     }
-    return true;
+
+    // 2. Verificar colisão de horários (DURAÇÃO DE 60 MINUTOS)
+    // Se eu agendar às 08:30, eu ocupo 08:30 até 09:30.
+    // Isso conflita com alguém que agendou às 08:00 (vai até 09:00).
+    // Isso conflita com alguém que agendou às 09:00 (começa às 09:00).
+    
+    const candidateStart = timeToMinutes(candidateTime);
+    const candidateEnd = candidateStart + 60; // Duração fixa de 60 min
+
+    const appointmentsOnDay = fetchedAppointments.filter(a => a.date === dateString);
+
+    const hasConflict = appointmentsOnDay.some(existingAppt => {
+        const existingStart = timeToMinutes(existingAppt.time);
+        const existingEnd = existingStart + 60; // Duração fixa de 60 min
+
+        // Lógica de intersecção de intervalos:
+        // (StartA < EndB) e (EndA > StartB)
+        return candidateStart < existingEnd && candidateEnd > existingStart;
+    });
+
+    return !hasConflict;
   };
 
   const resetForm = () => {
@@ -147,6 +171,17 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     setIsSubmitting(true);
     setErrorMsg(null);
 
+    // Verificação dupla de segurança antes de enviar
+    if (!isTimeSlotValid(selectedDate, selectedTime)) {
+        setErrorMsg("Este horário acabou de ser ocupado ou conflita com outro agendamento.");
+        const freshData = await getAppointments();
+        setFetchedAppointments(freshData);
+        setSelectedTime(null);
+        setStep(0);
+        setIsSubmitting(false);
+        return;
+    }
+
     try {
       const newAppointment: Appointment = {
         id: '', 
@@ -158,21 +193,16 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         createdAt: Date.now()
       };
 
-      // Backend: Salvar no Banco de Dados
       const success = await saveAppointment(newAppointment);
 
       if (success) {
-        // Envio Automático para WhatsApp (Z-API)
         await sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime);
-        
         setShowSuccessModal(true);
         onBookingComplete();
       } else {
-        setErrorMsg("Este horário acabou de ser ocupado. Por favor, escolha outro.");
+        setErrorMsg("Erro ao salvar. Tente novamente.");
         const freshData = await getAppointments();
         setFetchedAppointments(freshData);
-        setStep(0);
-        setSelectedTime(null);
       }
     } catch (error) {
       console.error(error);
@@ -273,7 +303,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                                     </p>
                                 </div>
 
-                                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-8">
+                                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-5 gap-2 mb-8 max-h-[350px] overflow-y-auto custom-scrollbar pr-1">
                                     {TIME_SLOTS.map((time) => {
                                         if (isSelectedDateSaturday) {
                                             const hour = parseInt(time.split(':')[0], 10);
@@ -286,7 +316,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                                             disabled={!isAvailable}
                                             onClick={() => handleTimeSelect(time)}
                                             className={`
-                                                py-3 px-2 rounded-xl text-sm font-semibold transition-all border relative overflow-hidden
+                                                py-2 px-1 rounded-lg text-sm font-semibold transition-all border relative overflow-hidden
                                                 ${!isAvailable 
                                                 ? 'bg-gray-50 text-gray-300 border-transparent cursor-not-allowed decoration-slate-300' 
                                                 : selectedTime === time
@@ -339,6 +369,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                             <span className="mx-2 text-indigo-300">•</span>
                             {selectedTime}
                         </p>
+                         <p className="text-xs text-gray-400 mt-2">(Duração: 1 Hora)</p>
                     </div>
 
                     <form onSubmit={handleSubmit} className="space-y-5">

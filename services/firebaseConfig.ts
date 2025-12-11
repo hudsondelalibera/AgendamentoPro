@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
 
-// A leitura é feita via process.env injetado pelo Vite no build time.
+// Acessamos via process.env. O Vite substituirá essas chaves pelos valores reais durante o build (graças ao 'define' no vite.config.ts).
 const firebaseConfig = {
   apiKey: process.env.VITE_FIREBASE_API_KEY,
   authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -15,9 +15,8 @@ let db: Firestore | null = null;
 let isFirebaseInitialized = false;
 
 // Função auxiliar para verificar se a string é válida
-const isValid = (val: string | undefined) => val && val !== "" && val !== "undefined";
+const isValid = (val: string | undefined) => val && val !== "" && val !== "undefined" && val !== "null";
 
-// Verificação
 if (isValid(firebaseConfig.apiKey) && isValid(firebaseConfig.projectId)) {
     try {
         const app = initializeApp(firebaseConfig);
@@ -30,13 +29,13 @@ if (isValid(firebaseConfig.apiKey) && isValid(firebaseConfig.projectId)) {
 } else {
     console.warn("⚠️ Firebase não conectado. Modo de visualização offline.");
     
-    // Log de diagnóstico seguro (não mostra a chave inteira, apenas se existe)
-    console.group("Diagnóstico de Configuração Firebase");
-    console.log("API Key Presente?", isValid(firebaseConfig.apiKey) ? "SIM" : "NÃO");
-    console.log("Project ID Presente?", isValid(firebaseConfig.projectId) ? "SIM" : "NÃO");
-    console.log("Auth Domain Presente?", isValid(firebaseConfig.authDomain) ? "SIM" : "NÃO");
-    console.log("Variáveis brutas:", firebaseConfig); 
-    console.groupEnd();
+    // Log seguro para debug (apenas em ambiente de navegador para não quebrar SSR se houver)
+    if (typeof window !== 'undefined') {
+        console.group("Diagnóstico de Configuração Firebase");
+        console.log("API Key Status:", firebaseConfig.apiKey ? "Presente" : "Ausente");
+        console.log("Project ID Status:", firebaseConfig.projectId ? "Presente" : "Ausente");
+        console.groupEnd();
+    }
 }
 
 export { db, isFirebaseInitialized };

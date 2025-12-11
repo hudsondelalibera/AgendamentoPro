@@ -3,20 +3,18 @@ import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // Carrega variáveis de ambiente locais (.env)
-  // O terceiro argumento '' permite carregar todas as env vars, não apenas VITE_
+  // Cast process to any to avoid TS error: Property 'cwd' does not exist on type 'Process'
   const env = loadEnv(mode, (process as any).cwd(), '');
 
   return {
     plugins: [react()],
     define: {
-      // Prioridade: 
-      // 1. process.env (Vercel System Env)
-      // 2. env (Arquivo .env carregado pelo Vite)
-      // 3. '' (Fallback vazio)
+      // Prioridade: Variáveis do Sistema (Vercel) -> .env local -> Fallback vazio
+      
+      // Gemini API Key
       'process.env.API_KEY': JSON.stringify(process.env.API_KEY || env.API_KEY || ''),
       
-      // Firebase Configs
+      // Firebase Configs - Definidas explicitamente para substituição no build
       'process.env.VITE_FIREBASE_API_KEY': JSON.stringify(process.env.VITE_FIREBASE_API_KEY || env.VITE_FIREBASE_API_KEY || ''),
       'process.env.VITE_FIREBASE_AUTH_DOMAIN': JSON.stringify(process.env.VITE_FIREBASE_AUTH_DOMAIN || env.VITE_FIREBASE_AUTH_DOMAIN || ''),
       'process.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(process.env.VITE_FIREBASE_PROJECT_ID || env.VITE_FIREBASE_PROJECT_ID || ''),

@@ -1,13 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Inicialização segura: Se a chave não existir, não quebra a app imediatamente
-const getClient = () => {
-    const key = process.env.API_KEY;
-    if (!key) return null;
-    return new GoogleGenAI({ apiKey: key });
-};
-
-const aiClient = getClient();
+// Guidelines: The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+// We assume it is pre-configured and valid.
+const aiClient = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
 export const generateConfirmationMessage = async (
   clientName: string,
@@ -17,11 +12,6 @@ export const generateConfirmationMessage = async (
   const fallbackMessage = `Olá ${clientName}, confirmamos seu agendamento para ${date} às ${time}. Por favor, chegue com 5 minutos de antecedência.`;
 
   try {
-    if (!aiClient) {
-        console.warn("Gemini API Key não configurada. Usando mensagem padrão.");
-        return fallbackMessage;
-    }
-
     const model = 'gemini-2.5-flash';
     const prompt = `
       Crie uma mensagem curta, profissional e amigável de confirmação de agendamento para WhatsApp.

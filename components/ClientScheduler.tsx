@@ -113,14 +113,12 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     }
   };
 
-  // Converte horário "HH:MM" para minutos absolutos (ex: "01:00" -> 60)
   const timeToMinutes = (time: string) => {
     const [hours, minutes] = time.split(':').map(Number);
     return hours * 60 + minutes;
   };
 
   const isTimeSlotValid = (dateString: string, candidateTime: string) => {
-    // 1. Verificar se é passado
     const today = new Date();
     const selectedDateObj = new Date(dateString + 'T00:00:00');
     const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -131,23 +129,15 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
       const candidateMinutes = timeToMinutes(candidateTime);
       if (candidateMinutes <= currentMinutes) return false;
     }
-
-    // 2. Verificar colisão de horários (DURAÇÃO DE 60 MINUTOS)
-    // Se eu agendar às 08:30, eu ocupo 08:30 até 09:30.
-    // Isso conflita com alguém que agendou às 08:00 (vai até 09:00).
-    // Isso conflita com alguém que agendou às 09:00 (começa às 09:00).
     
     const candidateStart = timeToMinutes(candidateTime);
-    const candidateEnd = candidateStart + 60; // Duração fixa de 60 min
+    const candidateEnd = candidateStart + 60; 
 
     const appointmentsOnDay = fetchedAppointments.filter(a => a.date === dateString);
 
     const hasConflict = appointmentsOnDay.some(existingAppt => {
         const existingStart = timeToMinutes(existingAppt.time);
-        const existingEnd = existingStart + 60; // Duração fixa de 60 min
-
-        // Lógica de intersecção de intervalos:
-        // (StartA < EndB) e (EndA > StartB)
+        const existingEnd = existingStart + 60; 
         return candidateStart < existingEnd && candidateEnd > existingStart;
     });
 
@@ -171,7 +161,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     setIsSubmitting(true);
     setErrorMsg(null);
 
-    // Verificação dupla de segurança antes de enviar
+    // Verificação dupla de segurança
     if (!isTimeSlotValid(selectedDate, selectedTime)) {
         setErrorMsg("Este horário acabou de ser ocupado ou conflita com outro agendamento.");
         const freshData = await getAppointments();
@@ -193,10 +183,16 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         createdAt: Date.now()
       };
 
+      // 1. Salva no banco
       const success = await saveAppointment(newAppointment);
 
       if (success) {
-        await sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime);
+        // 2. Dispara o WhatsApp (Sem await crítico para não travar a UI se a API demorar)
+        sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime).catch(err => {
+            console.error("Erro background API:", err);
+        });
+
+        // 3. Mostra sucesso imediatamente
         setShowSuccessModal(true);
         onBookingComplete();
       } else {
@@ -433,7 +429,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                             }
                             {isSubmitting 
                              ? 'Confirmando...' 
-                             : 'Confirmar Agendamento'
+                             : 'Agendar Horário'
                             }
                         </button>
                     </form>
@@ -441,7 +437,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
             )}
         </div>
 
-        {/* Success Modal */}
+        {/* Success Modal - Simples e Profissional */}
         {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center relative animate-bounce-slow border-t-4 border-green-500">
@@ -450,19 +446,20 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
               <CheckCircle className="w-10 h-10 text-green-500" />
             </div>
 
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Agendado com Sucesso!</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Agendamento Realizado!</h2>
             
             <p className="text-gray-500 mb-6 text-sm">
-                Seu horário está reservado.<br/>
-                Entraremos em contato caso necessário.
+                Seu horário está reservado com sucesso.
             </p>
             
-            <button
-                onClick={resetForm}
-                className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-black transition-all text-sm shadow-lg"
-            >
-                Concluir
-            </button>
+            <div className="space-y-3">
+                <button
+                    onClick={resetForm}
+                    className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-black transition-all text-sm shadow-lg"
+                >
+                    Concluir
+                </button>
+            </div>
           </div>
         </div>
       )}

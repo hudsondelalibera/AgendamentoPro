@@ -1,45 +1,55 @@
-// --- CONFIGURAÇÃO Z-API (RESTAURADA) ---
-const INSTANCE_ID = 'SEU_ID_DA_INSTANCIA'; // Insira seu ID da Z-API aqui
-const TOKEN = 'SEU_TOKEN';             // Insira seu Token da Z-API aqui
+
+// --- CONFIGURAÇÃO Z-API (AUTOMÁTICA) ---
+const INSTANCE_ID = '3EB8778A29E0C1A13168B28DC313D01F';
+const INSTANCE_TOKEN = '90BD29C5A89B6FB43D089B93';
+const BASE_URL = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}`;
 
 export const sendAutomaticConfirmation = async (
-  clientPhone: string, 
+  clientPhone: string,
   clientName: string, 
-  date: string, 
-  time: string
-): Promise<boolean> => {
+  date: string,       
+  time: string        
+): Promise<void> => {
+  
+  // 1. Limpeza rigorosa do telefone
+  let phone = clientPhone.replace(/\D/g, '');
+  
+  // Garante o DDI 55 (Brasil) se não estiver presente
+  if (!phone.startsWith('55')) {
+      phone = `55${phone}`;
+  }
+
+  // Formata data de YYYY-MM-DD para DD/MM/YYYY
+  const dateFormatted = date.split('-').reverse().join('/');
+
+  // 2. Mensagem atualizada conforme solicitação
+  const message = `Oi, *${clientName}* Tudo bem? 💕
+Sua agenda na KM Estética está confirmadíssima para *${dateFormatted}* às *${time}*✨
+Estamos muito felizes em te receber para cuidar de você com todo carinho que merece.
+Se precisar ajustar alguma informação, é só mandar uma mensagem aqui. 💬
+
+Até lá! 😍🌸`;
+
   try {
-    if (INSTANCE_ID === 'SEU_ID_DA_INSTANCIA') {
-        console.warn("Z-API não configurada. Configure o ID e Token em services/whatsappService.ts");
-        return true; 
-    }
-
-    const phone = '55' + clientPhone.replace(/\D/g, '');
-    const message = `Olá ${clientName}! 👋\n\nSeu agendamento está confirmado!\n🗓 Data: ${date.split('-').reverse().join('/')}\n⏰ Horário: ${time}\n\nPor favor, chegue com 5 minutos de antecedência. Até lá!`;
-
-    const url = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${TOKEN}/send-text`;
-
-    const response = await fetch(url, {
+    console.log(`[Z-API] Disparando mensagem para ${phone}...`);
+    
+    // Fire-and-forget: Tentamos enviar, mas não travamos o app se falhar
+    // O await aqui é apenas para garantir que a requisição saia antes de fechar componentes
+    await fetch(`${BASE_URL}/send-text`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Client-Token': 'F4051016629749558373180299696345' // Token de segurança opcional, se houver
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         phone: phone,
         message: message
       })
     });
+    
+    console.log("[Z-API] Requisição enviada.");
 
-    return response.ok;
   } catch (error) {
-    console.error('Erro ao enviar WhatsApp:', error);
-    // Retorna true para não bloquear o fluxo do app mesmo se o envio falhar
-    return true;
+    // Log apenas para o desenvolvedor, não afeta o fluxo do usuário
+    console.error("[Z-API] Erro silencioso no envio:", error);
   }
-};
-
-export const getManualWhatsappLink = (phone: string, message: string) => {
-    const cleanPhone = phone.replace(/\D/g, '');
-    return `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`;
 };

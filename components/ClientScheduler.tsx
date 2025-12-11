@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Appointment, TIME_SLOTS, DaySlot } from '../types';
 import { saveAppointment, getAppointments } from '../services/storageService';
-import { sendAutomaticConfirmation } from '../services/whatsappService';
-import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, ChevronRight, AlertCircle, CloudOff, ArrowLeft } from 'lucide-react';
+import { getConfirmationLink } from '../services/whatsappService';
+import { Calendar, Clock, CheckCircle, Smartphone, User, Loader2, ChevronRight, AlertCircle, CloudOff, ArrowLeft, Send } from 'lucide-react';
 import { isFirebaseInitialized } from '../services/firebaseConfig';
 
 interface ClientSchedulerProps {
@@ -183,17 +184,11 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
         createdAt: Date.now()
       };
 
-      // 1. Salva no banco
       const success = await saveAppointment(newAppointment);
 
       if (success) {
-        // 2. Dispara o WhatsApp
-        await sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime);
-        
-        // Pequeno delay para garantir que o navegador processe a requisição de rede antes de renderizar o sucesso
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        // 3. Mostra sucesso
+        // Pequeno delay visual
+        await new Promise(resolve => setTimeout(resolve, 500));
         setShowSuccessModal(true);
         onBookingComplete();
       } else {
@@ -207,6 +202,12 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const openWhatsAppConfirmation = () => {
+      if (!selectedDate || !selectedTime || !clientName || !clientWhatsapp) return;
+      const link = getConfirmationLink(clientWhatsapp, clientName, selectedDate, selectedTime);
+      window.open(link, '_blank');
   };
 
   const isSelectedDateSaturday = selectedDate ? new Date(selectedDate + 'T00:00:00').getDay() === 6 : false;
@@ -429,7 +430,7 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
                              : <CheckCircle className="w-6 h-6" />
                             }
                             {isSubmitting 
-                             ? 'Confirmando...' 
+                             ? 'Salvando...' 
                              : 'Agendar Horário'
                             }
                         </button>
@@ -450,15 +451,23 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Agendamento Realizado!</h2>
             
             <p className="text-gray-500 mb-6 text-sm">
-                Seu horário está reservado com sucesso.
+                Seu horário foi salvo na agenda.
             </p>
             
             <div className="space-y-3">
                 <button
-                    onClick={resetForm}
-                    className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-black transition-all text-sm shadow-lg"
+                    onClick={openWhatsAppConfirmation}
+                    className="w-full py-3.5 px-4 rounded-xl font-bold text-white shadow-lg transition-all text-sm flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600"
                 >
-                    Concluir
+                    <Send className="w-4 h-4" />
+                    Enviar Confirmação WhatsApp
+                </button>
+
+                <button
+                    onClick={resetForm}
+                    className="w-full bg-gray-100 text-gray-700 font-bold py-3 px-4 rounded-xl hover:bg-gray-200 transition-all text-sm"
+                >
+                    Fechar
                 </button>
             </div>
           </div>

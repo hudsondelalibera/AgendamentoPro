@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Appointment } from '../types';
 import { subscribeToAppointments, cancelAppointment, clearAllAppointments } from '../services/storageService';
-import { sendAppointmentLink } from '../services/whatsappService';
+import { getInviteLink, getConfirmationLink } from '../services/whatsappService';
 import { Trash2, BarChart2, Download, Eraser, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CloudOff, Filter, X, Smartphone, Send, ExternalLink } from 'lucide-react';
 import { isFirebaseInitialized } from '../services/firebaseConfig';
 
@@ -16,8 +16,6 @@ export const AdminDashboard: React.FC = () => {
   // Estados para o envio de convite
   const [inviteName, setInviteName] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
-  const [isSendingInvite, setIsSendingInvite] = useState(false);
-  const [inviteStatus, setInviteStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
@@ -49,35 +47,20 @@ export const AdminDashboard: React.FC = () => {
     copyToClipboard(url);
   };
 
-  const handleSendInvite = async (e: React.FormEvent) => {
+  const handleOpenInvite = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteName || !invitePhone) return;
-
-    setIsSendingInvite(true);
-    setInviteStatus('idle');
-
-    try {
-      const success = await sendAppointmentLink(invitePhone, inviteName);
-      if (success) {
-        setInviteStatus('success');
-        setInviteName('');
-        setInvitePhone('');
-        setTimeout(() => setInviteStatus('idle'), 3000);
-      } else {
-        setInviteStatus('error');
-      }
-    } catch (error) {
-      setInviteStatus('error');
-    } finally {
-      setIsSendingInvite(false);
-    }
+    
+    const link = getInviteLink(invitePhone, inviteName);
+    window.open(link, '_blank');
+    
+    setInviteName('');
+    setInvitePhone('');
   };
 
-  const openWhatsapp = (phone: string) => {
-      const cleanNumber = phone.replace(/\D/g, '');
-      if (!cleanNumber) return;
-      const url = `https://wa.me/55${cleanNumber}`;
-      window.open(url, '_blank');
+  const handleOpenManualConfirmation = (apt: Appointment) => {
+    const link = getConfirmationLink(apt.clientWhatsapp, apt.clientName, apt.date, apt.time);
+    window.open(link, '_blank');
   };
 
   const processOccupancy = (data: Appointment[]) => {
@@ -264,11 +247,11 @@ export const AdminDashboard: React.FC = () => {
          
          <div className="flex-1 space-y-4">
              <div className="inline-flex items-center gap-2 bg-indigo-500/30 px-3 py-1 rounded-full text-xs font-bold text-indigo-200 uppercase tracking-wide border border-indigo-400/30">
-                 <Smartphone className="w-3 h-3" /> Z-API Conectada
+                 <Smartphone className="w-3 h-3" /> WhatsApp
              </div>
              <h2 className="text-3xl font-bold leading-tight">Envie o Calendário para seus Clientes</h2>
              <p className="text-indigo-100 text-sm md:text-base max-w-lg">
-                 Envie o link de agendamento diretamente para o WhatsApp do seu cliente. Ele receberá uma mensagem profissional e poderá escolher o horário ideal.
+                 Envie o link de agendamento diretamente para o WhatsApp do seu cliente.
              </p>
              <button onClick={handleShareLink} className="flex items-center gap-2 text-xs font-bold text-indigo-300 hover:text-white transition-colors">
                 {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -277,7 +260,7 @@ export const AdminDashboard: React.FC = () => {
          </div>
 
          <div className="w-full md:w-[400px] bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-6 shadow-2xl">
-             <form onSubmit={handleSendInvite} className="space-y-4">
+             <form onSubmit={handleOpenInvite} className="space-y-4">
                  <div>
                      <label className="block text-xs font-bold text-indigo-200 uppercase mb-1">Nome do Cliente</label>
                      <input 
@@ -301,24 +284,14 @@ export const AdminDashboard: React.FC = () => {
                  
                  <button 
                     type="submit" 
-                    disabled={isSendingInvite || !inviteName || !invitePhone}
+                    disabled={!inviteName || !invitePhone}
                     className={`
                         w-full py-3 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg
-                        ${inviteStatus === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' : 
-                          inviteStatus === 'error' ? 'bg-red-500 hover:bg-red-600 text-white' :
-                          'bg-white text-indigo-900 hover:bg-indigo-50'}
+                        bg-white text-indigo-900 hover:bg-indigo-50
                         disabled:opacity-70 disabled:cursor-not-allowed
                     `}
                  >
-                    {isSendingInvite ? (
-                        <div className="w-5 h-5 border-2 border-indigo-900/30 border-t-indigo-900 rounded-full animate-spin"></div>
-                    ) : inviteStatus === 'success' ? (
-                        <>Enviado com Sucesso <Check className="w-4 h-4" /></>
-                    ) : inviteStatus === 'error' ? (
-                        'Erro ao Enviar'
-                    ) : (
-                        <>Enviar Calendário <Send className="w-4 h-4" /></>
-                    )}
+                    Enviar Calendário <Send className="w-4 h-4" />
                  </button>
              </form>
          </div>
@@ -406,10 +379,11 @@ export const AdminDashboard: React.FC = () => {
                          
                          <div className="mt-1 flex gap-2">
                             <button 
-                                onClick={() => openWhatsapp(apt.clientWhatsapp)}
-                                className="flex-1 text-xs flex items-center justify-center gap-1 text-green-700 bg-green-50 py-2.5 rounded-lg hover:bg-green-100 border border-green-100 font-bold transition-all"
+                                onClick={() => handleOpenManualConfirmation(apt)}
+                                className="flex-1 text-xs flex items-center justify-center gap-1 text-indigo-700 bg-indigo-50 py-2.5 rounded-lg hover:bg-indigo-100 border border-indigo-100 font-bold transition-all"
                             >
-                                <Smartphone className="w-3 h-3" /> WhatsApp
+                                <Smartphone className="w-3 h-3" />
+                                Confirmar
                             </button>
                             <button 
                                 type="button"

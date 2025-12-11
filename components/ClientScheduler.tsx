@@ -187,12 +187,12 @@ export const ClientScheduler: React.FC<ClientSchedulerProps> = ({ onBookingCompl
       const success = await saveAppointment(newAppointment);
 
       if (success) {
-        // 2. Dispara o WhatsApp (Sem await crítico para não travar a UI se a API demorar)
-        sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime).catch(err => {
-            console.error("Erro background API:", err);
-        });
+        // 2. Dispara o WhatsApp e AGUARDA (await)
+        // Isso garante que a requisição saia do navegador antes de desmontar o componente
+        // O timeout interno no service garante que não ficaremos travados para sempre
+        await sendAutomaticConfirmation(clientWhatsapp, clientName, selectedDate, selectedTime);
 
-        // 3. Mostra sucesso imediatamente
+        // 3. Mostra sucesso
         setShowSuccessModal(true);
         onBookingComplete();
       } else {

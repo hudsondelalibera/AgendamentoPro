@@ -14,15 +14,15 @@ export const sendAutomaticConfirmation = async (
   // 1. Limpeza rigorosa do telefone
   let phone = clientPhone.replace(/\D/g, '');
   
-  // Garante o DDI 55 (Brasil) se não estiver presente
+  // Garante o DDI 55 (Brasil)
   if (!phone.startsWith('55')) {
       phone = `55${phone}`;
   }
 
-  // Formata data de YYYY-MM-DD para DD/MM/YYYY
+  // Formata data
   const dateFormatted = date.split('-').reverse().join('/');
 
-  // 2. Mensagem atualizada conforme solicitação
+  // 2. Mensagem atualizada
   const message = `Oi, *${clientName}* Tudo bem? 💕
 Sua agenda na KM Estética está confirmadíssima para *${dateFormatted}* às *${time}*✨
 Estamos muito felizes em te receber para cuidar de você com todo carinho que merece.
@@ -31,25 +31,38 @@ Se precisar ajustar alguma informação, é só mandar uma mensagem aqui. 💬
 Até lá! 😍🌸`;
 
   try {
-    console.log(`[Z-API] Disparando mensagem para ${phone}...`);
+    console.log(`[Z-API] Iniciando envio para ${phone}...`);
     
-    // Fire-and-forget: Tentamos enviar, mas não travamos o app se falhar
-    // O await aqui é apenas para garantir que a requisição saia antes de fechar componentes
-    await fetch(`${BASE_URL}/send-text`, {
+    // Controller para timeout (evita que o app trave se a API cair)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos max
+
+    const response = await fetch(`${BASE_URL}/send-text`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Client-Token': INSTANCE_TOKEN // Reforço de segurança para alguns endpoints
       },
       body: JSON.stringify({
         phone: phone,
         message: message
-      })
+      }),
+      // KEEPALIVE: Crucial para que o navegador não cancele a requisição 
+      // quando o componente React for desmontado ou mudar de tela.
+      keepalive: true, 
+      signal: controller.signal
     });
     
-    console.log("[Z-API] Requisição enviada.");
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+        console.log("[Z-API] Sucesso! Mensagem entregue ao gateway.");
+    } else {
+        const errorData = await response.text();
+        console.error(`[Z-API] Erro do Servidor: ${response.status}`, errorData);
+    }
 
   } catch (error) {
-    // Log apenas para o desenvolvedor, não afeta o fluxo do usuário
-    console.error("[Z-API] Erro silencioso no envio:", error);
+    console.error("[Z-API] Falha na comunicação. Verifique se a instância está Conectada ou bloqueio CORS.", error);
   }
 };

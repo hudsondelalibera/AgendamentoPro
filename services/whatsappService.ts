@@ -90,6 +90,7 @@ export const getConfirmationLink = (
   // \u{1F4AC} = 💬
   // \u{1F60D} = 😍
   // \u{1F338} = 🌸
+  // \u{1F4CD} = 📍
 
   const message = `Oi *${clientName}*, Tudo bem? \u{1F495}
 Sua agenda na KM Estética está confirmadíssima! \u{2728}
@@ -99,9 +100,29 @@ Sua agenda na KM Estética está confirmadíssima! \u{2728}
 Estamos muito felizes em te receber para cuidar de você com todo carinho que merece.
 Se precisar ajustar alguma informação, é só mandar uma mensagem aqui. \u{1F4AC}
 
+\u{1F4CD} *Localização:*
+Avenida Mandacaru, 2847 - Sala 06
+
 Até lá! \u{1F60D}\u{1F338}`;
 
   // Utilizando api.whatsapp.com para maior compatibilidade com emojis na URL
+  return `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(message)}`;
+};
+
+export const getReminderLink = (
+  clientPhone: string,
+  clientName: string,
+  date: string,
+  time: string
+): string => {
+  let phone = clientPhone.replace(/\D/g, '');
+  if (phone.length >= 10 && phone.length <= 11) phone = `55${phone}`;
+
+  const dateFormatted = date.split('-').reverse().join('/');
+
+  // \u{2764}\u{FE0F} = ❤️ (Coração Vermelho)
+  const message = `Oi *${clientName}*,\nPassando aqui para lembrar do seu horário:\n- *${dateFormatted}* - *${time}*\nPosso confirmar? \u{2764}\u{FE0F}`;
+
   return `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(message)}`;
 };
 

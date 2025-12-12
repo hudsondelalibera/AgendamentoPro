@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Appointment } from '../types';
 import { subscribeToAppointments, cancelAppointment, clearAllAppointments } from '../services/storageService';
-import { getInviteLink, getConfirmationLink } from '../services/whatsappService';
+import { getInviteLink, getReminderLink } from '../services/whatsappService';
 import { Trash2, BarChart2, Download, Eraser, Share2, Copy, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CloudOff, Filter, X, Smartphone, Send, ExternalLink } from 'lucide-react';
 import { isFirebaseInitialized } from '../services/firebaseConfig';
 
@@ -58,8 +58,8 @@ export const AdminDashboard: React.FC = () => {
     setInvitePhone('');
   };
 
-  const handleOpenManualConfirmation = (apt: Appointment) => {
-    const link = getConfirmationLink(apt.clientWhatsapp, apt.clientName, apt.date, apt.time);
+  const handleOpenReminder = (apt: Appointment) => {
+    const link = getReminderLink(apt.clientWhatsapp, apt.clientName, apt.date, apt.time);
     window.open(link, '_blank');
   };
 
@@ -387,11 +387,11 @@ export const AdminDashboard: React.FC = () => {
                          
                          <div className="mt-1 flex gap-2">
                             <button 
-                                onClick={() => handleOpenManualConfirmation(apt)}
-                                className="flex-1 text-xs flex items-center justify-center gap-1 text-indigo-700 bg-indigo-50 py-2.5 rounded-lg hover:bg-indigo-100 border border-indigo-100 font-bold transition-all"
+                                onClick={() => handleOpenReminder(apt)}
+                                className="flex-1 text-xs flex items-center justify-center gap-1 text-green-700 bg-green-50 py-2.5 rounded-lg hover:bg-green-100 border border-green-100 font-bold transition-all"
                             >
                                 <Smartphone className="w-3 h-3" />
-                                Confirmar
+                                Enviar Lembrete
                             </button>
                             <button 
                                 type="button"
